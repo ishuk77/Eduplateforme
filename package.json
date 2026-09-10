@@ -1,0 +1,25 @@
+{
+  "name": "eduplateforme",
+  "version": "1.0.0",
+  "description": "Initial foundation for the Eduplateforme education platform",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://localhost:26831/ishuk77/Eduplateforme"
+  },
+  "keywords": [
+    "education",
+    "saas",
+    "multitenant"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  }
+}
