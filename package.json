@@ -1,0 +1,11 @@
+{
+  "name": "eduplateforme",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Foundation domain for an international, multi-tenant education management SaaS.",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  }
+}
