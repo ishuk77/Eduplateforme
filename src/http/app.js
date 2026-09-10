@@ -9,19 +9,15 @@ export function createApp({ foundation = createDefaultFoundation() } = {}) {
     }
 
     if (request.method === 'GET' && url.pathname === '/meta/foundation') {
+      return Response.json(foundation.describeFoundation());
+    }
+
+    if (request.method === 'GET' && url.pathname === '/meta/invariants') {
+      const description = foundation.describeFoundation();
+
       return Response.json({
-        name: 'Eduplateforme',
-        scope: 'initial-foundation',
-        summary: foundation.summarize(),
-        modules: [
-          'organizations',
-          'people',
-          'accounts',
-          'authorization',
-          'academics',
-          'documents',
-          'audit'
-        ]
+        scope: description.scope,
+        invariants: description.invariants
       });
     }
 

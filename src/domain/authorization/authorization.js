@@ -1,4 +1,10 @@
-import { Entity, assertArray, assertRequiredString } from '../../shared/entity.js';
+import {
+  Entity,
+  ValidationError,
+  assertArray,
+  assertOptionalString,
+  assertRequiredString
+} from '../../shared/entity.js';
 
 export class Permission extends Entity {
   constructor({ id, code, description }) {
@@ -30,6 +36,38 @@ export class RoleAssignment extends Entity {
 
   end(at = new Date()) {
     this.endsAt = at;
+    this.touch(at);
+  }
+}
+
+export class PermissionGrant extends Entity {
+  constructor({
+    id,
+    permissionId,
+    organizationId,
+    personId = null,
+    accountId = null,
+    reason,
+    grantedAt = new Date(),
+    expiresAt = null
+  }) {
+    super({ id, createdAt: grantedAt, updatedAt: grantedAt });
+    this.permissionId = assertRequiredString(permissionId, 'permissionId');
+    this.organizationId = assertRequiredString(organizationId, 'organizationId');
+    this.personId = assertOptionalString(personId, 'personId');
+    this.accountId = assertOptionalString(accountId, 'accountId');
+    this.reason = assertRequiredString(reason, 'reason');
+    this.expiresAt = expiresAt;
+    this.revokedAt = null;
+
+    if ((this.personId === null && this.accountId === null) || (this.personId !== null && this.accountId !== null)) {
+      throw new ValidationError('PermissionGrant must target exactly one of personId or accountId.');
+    }
+  }
+
+  revoke(at = new Date()) {
+    this.status = 'revoked';
+    this.revokedAt = at;
     this.touch(at);
   }
 }

@@ -19,9 +19,33 @@ export function assertRequiredString(value, fieldName) {
   return value.trim();
 }
 
+export function assertOptionalString(value, fieldName) {
+  if (value == null) {
+    return null;
+  }
+
+  return assertRequiredString(value, fieldName);
+}
+
 export function assertArray(value, fieldName) {
   if (!Array.isArray(value)) {
     throw new ValidationError(`${fieldName} must be an array.`);
+  }
+
+  return value;
+}
+
+export function assertPlainObject(value, fieldName) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ValidationError(`${fieldName} must be an object.`);
+  }
+
+  return value;
+}
+
+export function assertPositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new ValidationError(`${fieldName} must be a positive integer.`);
   }
 
   return value;

@@ -21,6 +21,26 @@ export class CountryRuleRegistry {
     return true;
   }
 
+  validateNationalOrganizationIdentifier(countryCode, identifier) {
+    const rules = this.get(countryCode);
+
+    if (rules?.validateNationalOrganizationIdentifier) {
+      return rules.validateNationalOrganizationIdentifier(identifier);
+    }
+
+    return this.validateOrganizationReference(countryCode, identifier);
+  }
+
+  validateLocalOrganizationIdentifier(countryCode, identifier) {
+    const rules = this.get(countryCode);
+
+    if (rules?.validateLocalOrganizationIdentifier) {
+      return rules.validateLocalOrganizationIdentifier(identifier);
+    }
+
+    return true;
+  }
+
   validatePersonIdentifier(countryCode, identifier) {
     const rules = this.get(countryCode);
 
