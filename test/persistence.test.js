@@ -220,3 +220,41 @@ test('routes HTTP /health et erreurs JSON/volume', async () => {
     rmSync(temp.dir, { recursive: true, force: true });
   }
 });
+
+test('POST /organizations retourne CONFLICT sur code dupliqué', async () => {
+  const temp = createTempDbPath();
+  const service = PersistentEducationPlatformService.bootstrap({ databasePath: temp.dbPath });
+  const server = createServer(createAppHandler(service, { maxBodyBytes: 2048 }));
+
+  try {
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const url = `http://127.0.0.1:${address.port}/organizations`;
+    const payload = { name: 'Lycée Delta', code: 'LYC-DELTA' };
+
+    const firstResponse = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    assert.equal(firstResponse.status, 201);
+
+    const secondResponse = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    assert.equal(secondResponse.status, 409);
+    assert.deepEqual(await secondResponse.json(), { error: 'CONFLICT' });
+  } finally {
+    await new Promise((resolve) => {
+      if (!server.listening) {
+        resolve();
+        return;
+      }
+      server.close(resolve);
+    });
+    service.close();
+    rmSync(temp.dir, { recursive: true, force: true });
+  }
+});

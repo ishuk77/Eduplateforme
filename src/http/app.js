@@ -129,7 +129,11 @@ export function createAppHandler(service, options = {}) {
       } catch (error) {
         const mapped = mapHttpError(error);
         if (mapped.code === 'INTERNAL_ERROR') {
-          console.error(`Unhandled error on ${req.method} ${req.url}: ${error.name}`);
+          console.error(`Unhandled error on ${req.method} ${req.url}`, {
+            name: error?.name,
+            message: error?.message,
+            stack: error?.stack
+          });
         }
         sendJson(res, mapped.statusCode, { error: mapped.code });
       }

@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS academic_years (
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  UNIQUE (id, organization_id),
   UNIQUE (organization_id, name),
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT
 );
@@ -89,6 +90,7 @@ CREATE TABLE IF NOT EXISTS programs (
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  UNIQUE (id, organization_id),
   UNIQUE (organization_id, code),
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT
 );
@@ -106,8 +108,8 @@ CREATE TABLE IF NOT EXISTS classes (
   UNIQUE (id, organization_id),
   UNIQUE (organization_id, code),
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT,
-  FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE RESTRICT,
-  FOREIGN KEY (program_id) REFERENCES programs(id) ON DELETE SET NULL
+  FOREIGN KEY (academic_year_id, organization_id) REFERENCES academic_years(id, organization_id) ON DELETE RESTRICT,
+  FOREIGN KEY (program_id, organization_id) REFERENCES programs(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS enrollments (
@@ -138,6 +140,7 @@ CREATE TABLE IF NOT EXISTS documents (
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  UNIQUE (id, organization_id, person_id),
   UNIQUE (id, organization_id),
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT,
   FOREIGN KEY (person_id, organization_id) REFERENCES people(id, organization_id) ON DELETE RESTRICT
@@ -157,7 +160,7 @@ CREATE TABLE IF NOT EXISTS credentials (
   updated_at TEXT NOT NULL,
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT,
   FOREIGN KEY (person_id, organization_id) REFERENCES people(id, organization_id) ON DELETE RESTRICT,
-  FOREIGN KEY (document_id, organization_id) REFERENCES documents(id, organization_id) ON DELETE RESTRICT
+  FOREIGN KEY (document_id, organization_id, person_id) REFERENCES documents(id, organization_id, person_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS audit_events (
