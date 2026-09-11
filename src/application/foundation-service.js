@@ -1,3 +1,5 @@
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+
 import { AcademicYear, Enrollment, Learner, LearningClass, Program } from '../domain/academics/academics.js';
 import { UserAccount } from '../domain/accounts/user-account.js';
 import { DomainEvent } from '../domain/audit/domain-event.js';
@@ -248,7 +250,16 @@ export class FoundationService {
   registerDocument(input, actorId = null) {
     this.assertExists(this.organizations, input.organizationId, 'organization');
     this.assertExists(this.people, input.personId, 'person');
-    const document = new DocumentRecord(input);
+    const person = this.people.get(input.personId);
+    if (person.primaryOrganizationId && person.primaryOrganizationId !== input.organizationId) {
+      throw new ValidationError('Document holder must belong to the same organization.');
+    }
+    const document = new DocumentRecord({
+      ...input,
+      fileHash: input.fileHash ?? createHash('sha256')
+        .update(String(input.fileContent ?? input.storageReference))
+        .digest('hex')
+    });
     this.documents.set(document.id, document);
     this.recordEvent('document.registered', document, actorId, { versionNumber: document.versionNumber });
     return document;
@@ -257,7 +268,13 @@ export class FoundationService {
   registerDocumentVersion(previousDocumentId, input = {}, actorId = null) {
     this.assertExists(this.documents, previousDocumentId, 'document');
     const previousDocument = this.documents.get(previousDocumentId);
-    const document = previousDocument.createNextVersion(input);
+    const hashSource = input.fileContent ?? input.storageReference;
+    const document = previousDocument.createNextVersion({
+      ...input,
+      ...(hashSource ? {
+        fileHash: createHash('sha256').update(String(hashSource)).digest('hex')
+      } : {})
+    });
     previousDocument.markSuperseded(document.createdAt);
     this.documents.set(document.id, document);
     this.recordEvent('document.versioned', document, actorId, {
@@ -272,9 +289,47 @@ export class FoundationService {
     this.assertExists(this.organizations, input.organizationId, 'organization');
     this.assertExists(this.people, input.personId, 'person');
     this.assertExists(this.documents, input.documentId, 'document');
-    const credential = new CredentialRecord(input);
+    const document = this.documents.get(input.documentId);
+    if (input.issuerOrganizationId && input.issuerOrganizationId !== input.organizationId) {
+      throw new ValidationError('issuerOrganizationId must match the credential organization.');
+    }
+    if (input.holderId && input.holderId !== input.personId) {
+      throw new ValidationError('holderId must match personId.');
+    }
+    if (input.programId) {
+      this.assertExists(this.programs, input.programId, 'program');
+      if (this.programs.get(input.programId).organizationId !== input.organizationId) {
+        throw new ValidationError('Credential program must belong to the issuer organization.');
+      }
+    }
+    if (document.organizationId !== input.organizationId || document.personId !== input.personId) {
+      throw new ValidationError('Credential document, holder, and issuer must belong to the same organization.');
+    }
+    const credentialNumber = input.credentialNumber ?? `EDU-${randomUUID().toUpperCase()}`;
+    if (Array.from(this.credentials.values()).some((candidate) =>
+      candidate.issuerOrganizationId === (input.issuerOrganizationId ?? input.organizationId)
+      && candidate.credentialNumber === credentialNumber
+    )) {
+      throw new ValidationError('credentialNumber must be unique for the issuer.');
+    }
+    const verificationToken = randomBytes(32).toString('base64url');
+    const credential = new CredentialRecord({
+      ...input,
+      credentialNumber,
+      qualification: input.qualification ?? input.credentialType,
+      fileHash: input.fileHash ?? document.fileHash,
+      publicReference: randomBytes(18).toString('base64url'),
+      verificationTokenHash: createHash('sha256').update(verificationToken).digest('hex'),
+      publicVerificationEnabled: true,
+      status: input.status ?? 'issued'
+    });
     this.credentials.set(credential.id, credential);
     this.recordEvent('credential.issued', credential, actorId, { versionNumber: credential.versionNumber });
+    Object.defineProperty(credential, 'verificationToken', {
+      configurable: true,
+      enumerable: false,
+      value: verificationToken
+    });
     return credential;
   }
 
@@ -285,13 +340,100 @@ export class FoundationService {
     }
 
     const previousCredential = this.credentials.get(previousCredentialId);
-    const credential = previousCredential.createNextVersion(input);
-    previousCredential.markSuperseded(credential.createdAt);
+    const document = this.documents.get(input.documentId ?? previousCredential.documentId);
+    if (document.organizationId !== previousCredential.organizationId
+      || document.personId !== previousCredential.personId) {
+      throw new ValidationError('Replacement document must belong to the original issuer and holder.');
+    }
+    if (input.organizationId && input.organizationId !== previousCredential.organizationId) {
+      throw new ValidationError('Credential organization cannot change during replacement.');
+    }
+    if (input.personId && input.personId !== previousCredential.personId) {
+      throw new ValidationError('Credential holder cannot change during replacement.');
+    }
+    if (input.programId) {
+      this.assertExists(this.programs, input.programId, 'program');
+      if (this.programs.get(input.programId).organizationId !== previousCredential.organizationId) {
+        throw new ValidationError('Credential program must belong to the original issuer.');
+      }
+    }
+    const verificationToken = randomBytes(32).toString('base64url');
+    const credential = new CredentialRecord({
+      ...previousCredential,
+      ...input,
+      id: input.id,
+      organizationId: previousCredential.organizationId,
+      personId: previousCredential.personId,
+      holderId: previousCredential.holderId,
+      issuerOrganizationId: previousCredential.issuerOrganizationId,
+      documentId: document.id,
+      credentialNumber: input.credentialNumber ?? `EDU-${randomUUID().toUpperCase()}`,
+      versionNumber: previousCredential.versionNumber + 1,
+      lineageId: previousCredential.lineageId,
+      supersedesCredentialId: previousCredential.id,
+      replacedByCredentialId: null,
+      fileHash: input.fileHash ?? document.fileHash,
+      publicReference: randomBytes(18).toString('base64url'),
+      verificationTokenHash: createHash('sha256').update(verificationToken).digest('hex'),
+      publicVerificationEnabled: true,
+      status: input.status ?? 'issued',
+      statusHistory: []
+    });
+    const changedAt = new Date();
+    previousCredential.status = input.reason || input.replacementReason ? 'replaced' : 'superseded';
+    previousCredential.replacedByCredentialId = credential.id;
+    previousCredential.touch(changedAt);
     this.credentials.set(credential.id, credential);
     this.recordEvent('credential.reissued', credential, actorId, {
       previousCredentialId,
       versionNumber: credential.versionNumber,
       lineageId: credential.lineageId
+    });
+    Object.defineProperty(credential, 'verificationToken', {
+      configurable: true,
+      enumerable: false,
+      value: verificationToken
+    });
+    return credential;
+  }
+
+  transitionCredentialStatus(credentialId, input, actorId = null) {
+    this.assertExists(this.credentials, credentialId, 'credential');
+    const credential = this.credentials.get(credentialId);
+    const allowed = {
+      draft: ['issued', 'void'],
+      issued: ['valid', 'suspended', 'revoked', 'void', 'expired', 'replaced'],
+      valid: ['suspended', 'revoked', 'expired', 'replaced'],
+      suspended: ['valid', 'revoked', 'expired', 'replaced'],
+      replaced: [],
+      revoked: [],
+      void: [],
+      expired: []
+    };
+    if (!(allowed[credential.status] ?? []).includes(input.status)) {
+      throw new ValidationError(`Transition from ${credential.status} to ${input.status} is not allowed.`);
+    }
+    if (!input.reason) {
+      throw new ValidationError('reason is required for credential status transitions.');
+    }
+    const changedAt = new Date();
+    credential.statusHistory.push({
+      from: credential.status,
+      to: input.status,
+      reason: input.reason,
+      authority: input.authority ?? null,
+      actorId,
+      changedAt: changedAt.toISOString()
+    });
+    credential.status = input.status;
+    if (input.status === 'revoked') {
+      credential.revokedAt = changedAt;
+      credential.revocationReason = input.reason;
+    }
+    credential.touch(changedAt);
+    this.recordEvent(`credential.${input.status}`, credential, actorId, {
+      reason: input.reason,
+      authority: input.authority ?? null
     });
     return credential;
   }

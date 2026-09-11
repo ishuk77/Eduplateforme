@@ -72,11 +72,17 @@ export function makeCrudHandlers({
         permissions: [readPermission]
       });
       filters.includeArchived = parseIncludeArchived(url);
+      await service.recordSensitiveAccess?.({
+        actorId: identity.actorId,
+        organizationId: filters.organizationId,
+        resource,
+        context: { operation: 'list', filters }
+      });
       return Response.json(await service.listCrudResource(resource, filters));
     },
     get: async (request, _url, params) => {
       const record = await service.getCrudResource(resource, params.id);
-      authorizeRequest(request, service, {
+      const identity = authorizeRequest(request, service, {
         organizationId: getOrganizationIdFromRecord(record),
         permissions: [readPermission],
         context: contextualResource ? {
@@ -85,6 +91,13 @@ export function makeCrudHandlers({
           scopeType: record.classId ? 'class' : record.programId ? 'program' : record.campusId ? 'site' : record.learnerId ? 'learner' : 'organization',
           scopeId: record.classId ?? record.programId ?? record.campusId ?? record.learnerId ?? null
         } : null
+      });
+      await service.recordSensitiveAccess?.({
+        actorId: identity.actorId,
+        organizationId: getOrganizationIdFromRecord(record),
+        resource,
+        entityId: params.id,
+        context: { operation: 'read' }
       });
       return Response.json(record);
     },

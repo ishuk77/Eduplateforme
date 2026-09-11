@@ -367,6 +367,12 @@ const modules = [
       id: 'parentalConsents', title: 'Consentements parentaux', path: '/security/parental-consents', read: 'security.read', write: 'security.write',
       fields: [['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['parentPersonId', 'Responsable', 'reference', true, '/people', 'familyName'], ['scope', 'Finalité', 'text', true], ['grantedAt', 'Accord donné le', 'datetime-local', true]],
       columns: ['learnerId', 'parentPersonId', 'scope', 'grantedAt'], createOnly: true
+    }, {
+      id: 'consents', title: 'Consentements et confidentialité', path: '/security/consents', read: 'consents.read', write: 'consents.write',
+      fields: [['subjectPersonId', 'Personne concernée', 'reference', true, '/people', 'familyName'], ['authorityPersonId', 'Autorité du consentement', 'reference', true, '/people', 'familyName'], ['subjectCapacity', 'Capacité', 'select', true, ['minor', 'adult']], ['purpose', 'Finalité', 'text', true], ['dataScope', 'Données concernées (JSON)', 'json', true], ['recipientOrganizationId', 'Organisation destinataire', 'text', true], ['legalBasis', 'Base juridique', 'text', true], ['expiresAt', 'Expiration', 'datetime-local', true]],
+      columns: ['subjectPersonId', 'subjectCapacity', 'purpose', 'dataScope', 'recipientOrganizationId', 'expiresAt', 'status'],
+      createOnly: true,
+      action: { label: 'Retirer', path: '/security/consents/:id/withdraw', fields: [['reason', 'Motif', 'text', true]], show: (record) => record.status === 'active' }
     }]
   },
   {
@@ -445,21 +451,54 @@ const modules = [
   {
     id: 'documents',
     path: '/documents',
-    label: 'Documents',
-    eyebrow: 'Justificatifs',
-    description: 'Enregistrez des documents et émettez des justificatifs versionnés.',
+    label: 'Documents et mobilité',
+    eyebrow: 'Dossiers de confiance',
+    description: 'Gérez modèles, dossiers, justificatifs, partages contrôlés et transferts interinstitutionnels.',
     resources: [
+      {
+        id: 'documentTemplates', title: 'Modèles officiels', path: '/document-templates',
+        read: 'documents.read', write: 'documents.write',
+        fields: [['name', 'Nom', 'text', true], ['documentType', 'Type documentaire', 'text', true], ['versionNumber', 'Version', 'number', true], ['schema', 'Schéma (JSON)', 'json', true], ['layoutReference', 'Référence de mise en page', 'text', false], ['requiredSignerFunctions', 'Fonctions signataires (JSON)', 'json', false]],
+        columns: ['name', 'documentType', 'versionNumber', 'publishedAt', 'status']
+      },
       {
         id: 'documents', title: 'Documents', path: '/documents',
         read: 'documents.read', write: 'documents.write',
-        fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['type', 'Type', 'text', true], ['title', 'Titre', 'text', true], ['storageReference', 'Référence de stockage', 'text', true], ['documentNumber', 'Numéro', 'text', false]],
-        columns: ['title', 'type', 'documentNumber', 'versionNumber', 'status']
+        fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['type', 'Type', 'text', true], ['title', 'Titre', 'text', true], ['storageReference', 'Référence sécurisée', 'text', true], ['documentNumber', 'Numéro', 'text', false], ['metadata', 'Métadonnées (JSON)', 'json', false], ['accessLevel', 'Accès', 'select', true, ['restricted', 'holder', 'organization', 'shared']], ['accessPolicy', 'Politique d’accès (JSON)', 'json', false], ['expiresAt', 'Expiration', 'datetime-local', false]],
+        columns: ['title', 'type', 'documentNumber', 'versionNumber', 'accessLevel', 'expiresAt', 'status'],
+        action: { label: 'Changer le statut', path: '/documents/:id/transition', fields: [['status', 'Nouveau statut', 'select', true, ['expired', 'archived']], ['reason', 'Motif', 'text', true]] }
       },
       {
-        id: 'credentials', title: 'Justificatifs', path: '/credentials',
+        id: 'credentials', title: 'Diplômes et attestations', path: '/credentials',
         read: 'credentials.read', write: 'credentials.write',
-        fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['documentId', 'Document', 'reference', true, '/documents', 'title'], ['credentialType', 'Type', 'text', true], ['credentialNumber', 'Numéro', 'text', false]],
-        columns: ['credentialType', 'credentialNumber', 'versionNumber', 'status']
+        fields: [['personId', 'Titulaire', 'reference', true, '/people', 'familyName'], ['documentId', 'Document', 'reference', true, '/documents', 'title'], ['templateId', 'Modèle', 'reference', false, '/document-templates', 'name'], ['credentialType', 'Type', 'select', true, ['diploma', 'certificate', 'attestation', 'credential']], ['credentialNumber', 'Numéro unique', 'text', false], ['qualification', 'Qualification', 'text', true], ['programId', 'Programme', 'reference', false, '/academics/programs', 'name'], ['signatories', 'Signataires et signatures (JSON)', 'json', false], ['sealReference', 'Référence du sceau', 'text', false], ['expiresAt', 'Expiration', 'datetime-local', false]],
+        columns: ['credentialType', 'credentialNumber', 'qualification', 'versionNumber', 'publicReference', 'status'],
+        createOnly: true,
+        action: { label: 'Appliquer la transition', path: '/credentials/:id/transition', fields: [['status', 'Nouveau statut', 'select', true, ['issued', 'valid', 'suspended', 'revoked', 'void', 'expired', 'replaced']], ['reason', 'Motif', 'text', true], ['authority', 'Autorité', 'text', false]] }
+      },
+      {
+        id: 'documentShares', title: 'Partages contrôlés', path: '/document-shares',
+        read: 'documents.read', write: 'documents.write',
+        fields: [['documentId', 'Document', 'reference', true, '/documents', 'title'], ['recipient', 'Destinataire', 'text', true], ['purpose', 'Finalité', 'text', true], ['dataScope', 'Données autorisées (JSON)', 'json', true], ['consentId', 'Consentement', 'reference', false, '/security/consents', 'purpose'], ['expiresAt', 'Expiration', 'datetime-local', true]],
+        columns: ['documentId', 'recipient', 'purpose', 'dataScope', 'expiresAt', 'status'],
+        createOnly: true,
+        action: { label: 'Fermer le partage', path: '/document-shares/:id/revoke', fields: [['status', 'Décision', 'select', true, ['revoked', 'refused']], ['reason', 'Motif', 'text', true]] }
+      },
+      {
+        id: 'collaborationRequests', title: 'Demandes interinstitutionnelles', path: '/collaboration/requests',
+        read: 'collaboration.read', write: 'collaboration.write',
+        fields: [['destinationOrganizationId', 'Organisation destinataire', 'text', true], ['requestType', 'Type', 'select', true, ['verification', 'transfer', 'record', 'confirmation', 'recommendation', 'sharing']], ['purpose', 'Finalité', 'text', true], ['dataScope', 'Périmètre (JSON)', 'json', true], ['expiresAt', 'Expiration', 'datetime-local', true]],
+        columns: ['requestType', 'destinationOrganizationId', 'purpose', 'dataScope', 'expiresAt', 'status'],
+        createOnly: true,
+        action: { label: 'Répondre', path: '/collaboration/requests/:id/decision', fields: [['status', 'Décision', 'select', true, ['accepted', 'refused', 'partial']], ['acceptedDataScope', 'Périmètre accepté (JSON)', 'json', false], ['reason', 'Motif', 'text', true]] }
+      },
+      {
+        id: 'transfers', title: 'Transferts sécurisés', path: '/transfers',
+        read: 'transfers.read', write: 'transfers.write',
+        fields: [['destinationOrganizationId', 'Organisation destinataire', 'text', true], ['learnerId', 'Apprenant source', 'reference', true, '/academics/learners', 'learnerNumber'], ['requestedData', 'Données demandées (JSON)', 'json', true], ['authorizationBasis', 'Base d’autorisation', 'select', true, ['consent', 'legal-obligation', 'public-task']], ['consentId', 'Consentement', 'reference', false, '/security/consents', 'purpose'], ['securePayloadReference', 'Référence sécurisée', 'text', true], ['encryption', 'Chiffrement (JSON)', 'json', false], ['destinationClassId', 'Classe destination', 'text', false], ['destinationAcademicYearId', 'Année destination', 'text', false]],
+        columns: ['learnerId', 'sourceOrganizationId', 'destinationOrganizationId', 'authorizationBasis', 'status', 'destinationEnrollmentId'],
+        createOnly: true,
+        action: { label: 'Faire progresser', path: '/transfers/:id/transition', fields: [['status', 'Étape', 'select', true, ['requested', 'validated', 'sent', 'acknowledged', 'refused', 'cancelled', 'expired']], ['reason', 'Motif', 'text', true]] }
       }
     ]
   },
@@ -587,6 +626,7 @@ function landing() {
             <a class="primary-button" href="/register">Créer mon école</a>
             <a class="secondary-button" href="/login">J’ai déjà un compte</a>
             <a class="secondary-button" href="/verify-institution">Vérifier une institution</a>
+            <a class="secondary-button" href="/verify-credential">Vérifier un diplôme</a>
           </div>
         </div>
         <div class="landing-panel surface-card">
@@ -617,6 +657,14 @@ function onboarding() {
           <label>Référence interne<input name="internalReference" required minlength="2" placeholder="ECOLE-001"></label>
           <label>Code pays<input name="countryCode" required minlength="2" maxlength="2" value="FR"></label>
           <label>Type<select name="organizationType"><option value="institution">Établissement</option><option value="school">École</option><option value="campus">Campus</option></select></label>
+          <label>Identifiant national<input name="nationalInstitutionId"></label>
+          <label>Immatriculation<input name="registrationNumber"></label>
+          <label>Identifiant fiscal<input name="taxIdentifier"></label>
+          <label>Forme juridique<input name="legalForm"></label>
+          <label>Autorité administrative<input name="administrativeAuthority"></label>
+          <label>Statut opérationnel<select name="operationalStatus"><option value="pending">En attente</option><option value="operational">Opérationnel</option><option value="suspended">Suspendu</option></select></label>
+          <label class="form-wide">Adresse du siège (JSON)<textarea name="headquartersAddress" placeholder='{"city":"Dakar"}'></textarea></label>
+          <label class="form-wide">Contact officiel (JSON)<textarea name="officialContact" placeholder='{"email":"contact@example.edu"}'></textarea></label>
           <button class="primary-button" type="submit">Créer l’établissement</button>
         </form>
       </section>
@@ -815,12 +863,19 @@ function bindResources(module) {
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const resource = byId.get(form.dataset.recordAction);
-      const body = Object.fromEntries(new FormData(form));
-      body[resource.action.idField] = form.dataset.id;
+      const formData = new FormData(form);
+      const body = Object.fromEntries(resource.action.fields.map(([name, , type]) => {
+        const value = formData.get(name);
+        if (type === 'json' && value) return [name, JSON.parse(value)];
+        if (type === 'number' && value !== '') return [name, Number(value)];
+        return [name, value];
+      }).filter(([, value]) => value !== ''));
+      if (resource.action.idField) body[resource.action.idField] = form.dataset.id;
+      const actionPath = resource.action.path.replace(':id', encodeURIComponent(form.dataset.id));
       const button = form.querySelector('button[type="submit"]');
       button.disabled = true;
       try {
-        await apiRequest(resource.action.path, { method: 'POST', body: JSON.stringify(body) });
+        await apiRequest(actionPath, { method: 'POST', body: JSON.stringify(body) });
         notification(`${resource.action.label} : opération enregistrée.`);
         await modulePage(module);
       } catch (error) {
@@ -894,7 +949,8 @@ async function loadCurrentUser() {
 
 async function route() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
-  const publicPath = path === '/' || path === '/login' || path === '/register' || path === '/verify-institution';
+  const publicPath = path === '/' || path === '/login' || path === '/register'
+    || path === '/verify-institution' || path === '/verify-credential';
   const authenticationEntryPath = path === '/' || path === '/login' || path === '/register';
   const authenticated = await loadCurrentUser();
 
@@ -950,13 +1006,52 @@ async function route() {
     });
     return;
   }
+  if (path === '/verify-credential') {
+    app.innerHTML = `
+      <main class="public-layout">
+        <a class="brand-mark public-brand" href="/">Eduplateforme</a>
+        <section class="auth-card surface-card">
+          <p class="section-label">Vérification publique minimisée</p>
+          <h1>Vérifier un diplôme</h1>
+          <p class="section-copy">Saisissez la référence opaque du QR code. Seules les données strictement nécessaires à la vérification sont affichées.</p>
+          <div id="feedback" class="feedback" role="alert" tabindex="-1" hidden></div>
+          <form id="credential-verification-form" class="form-grid">
+            <label class="form-wide">Référence de vérification<input name="reference" required autocomplete="off"></label>
+            <button class="primary-button" type="submit">Vérifier</button>
+          </form>
+          <section id="credential-verification-result" class="verification-result" aria-live="polite"></section>
+        </section>
+      </main>`;
+    document.querySelector('#credential-verification-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const reference = new FormData(event.currentTarget).get('reference');
+      try {
+        const result = await apiRequest(`/public/credentials/verify/${encodeURIComponent(reference)}`);
+        document.querySelector('#credential-verification-result').innerHTML = `
+          <h2>${escapeHtml(result.qualification)}</h2>
+          <dl>
+            <div><dt>Statut</dt><dd>${escapeHtml(result.status)}</dd></div>
+            <div><dt>Intégrité</dt><dd>${result.integrity ? 'Confirmée' : 'Non confirmée'}</dd></div>
+            <div><dt>Numéro</dt><dd>${escapeHtml(result.credentialNumber)}</dd></div>
+            <div><dt>Titulaire</dt><dd>${escapeHtml(`${result.holder?.givenName ?? ''} ${result.holder?.familyName ?? ''}`.trim())}</dd></div>
+            <div><dt>Émetteur</dt><dd>${escapeHtml(result.issuer?.legalName)}</dd></div>
+            <div><dt>Expiration</dt><dd>${formatValue(result.expiresAt)}</dd></div>
+          </dl>`;
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    });
+    return;
+  }
   if (path === '/login' || path === '/register') {
     const kind = path.slice(1);
     app.innerHTML = authForm(kind);
     document.querySelector('#auth-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
-      const body = Object.fromEntries(new FormData(form));
+      const body = Object.fromEntries(
+        [...new FormData(form).entries()].filter(([, value]) => value !== '')
+      );
       const button = form.querySelector('button[type="submit"]');
       button.disabled = true;
       button.textContent = 'Chargement…';
@@ -982,7 +1077,14 @@ async function route() {
       button.disabled = true;
       button.textContent = 'Création…';
       try {
-        const payload = await apiRequest('/auth/onboarding', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+        const body = Object.fromEntries(
+          [...new FormData(form).entries()].filter(([, value]) => value !== '')
+        );
+        for (const field of ['headquartersAddress', 'officialContact']) {
+          if (body[field]) body[field] = JSON.parse(body[field]);
+          else delete body[field];
+        }
+        const payload = await apiRequest('/auth/onboarding', { method: 'POST', body: JSON.stringify(body) });
         setToken(payload.accessToken);
         state.user = payload.user;
         window.location.assign('/dashboard');
