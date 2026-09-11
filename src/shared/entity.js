@@ -52,12 +52,12 @@ export function assertPositiveInteger(value, fieldName) {
 }
 
 export class Entity {
-  constructor({ id = createPermanentId(), status = 'active', createdAt = new Date(), updatedAt = new Date() } = {}) {
+  constructor({ id = createPermanentId(), status = 'active', createdAt = new Date(), updatedAt = new Date(), archivedAt = null } = {}) {
     this.id = id;
     this.status = status;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
-    this.archivedAt = null;
+    this.archivedAt = archivedAt;
   }
 
   touch(at = new Date()) {

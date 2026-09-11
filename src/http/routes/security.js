@@ -1,10 +1,15 @@
-import { parseJson } from '../middleware/validation.js';
-import { authorizeRequest } from '../middleware/auth.js';
+import { makeCrudHandlers } from './_helpers.js';
 
 export function registerSecurityRoutes(router, { service }) {
-  router.add('POST', '/security/parental-consents', async (request) => {
-    const body = await parseJson(request);
-    const identity = authorizeRequest(request, service, { organizationId: body.organizationId, permissions: ['security.write'] });
-    return Response.json(await service.recordParentalConsent(body, identity.actorId), { status: 201 });
+  const handlers = makeCrudHandlers({
+    service, resource: 'parentalConsents',
+    create: (body, actorId) => service.recordParentalConsent(body, actorId),
+    readPermission: 'security.read', writePermission: 'security.write'
   });
+  router.add('POST', '/security/parental-consents', handlers.create);
+  router.add('GET', '/security/parental-consents', handlers.list);
+  router.add('GET', '/security/parental-consents/:id', handlers.get);
+  router.add('PUT', '/security/parental-consents/:id', handlers.update);
+  router.add('DELETE', '/security/parental-consents/:id', handlers.remove);
+  router.add('GET', '/security/parental-consents/:id/history', handlers.history);
 }

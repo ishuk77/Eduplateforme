@@ -94,6 +94,12 @@ button:disabled { cursor: wait; opacity: .6; }
 .data-card dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
 .row-actions { display: flex; gap: .5rem; margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--border); }
 .row-actions .danger-link { color: var(--danger); }
+.resource-summary { margin: -.25rem 0 1rem; padding: .7rem .85rem; border-radius: .7rem; background: #eef4ff; color: var(--primary-dark); font-weight: 800; }
+.inline-action-form { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--border); }
+.inline-action-form label { display: grid; flex: 1 1 7rem; gap: .3rem; color: var(--muted); font-size: .78rem; font-weight: 700; }
+.inline-action-form input { width: 100%; min-height: 2.75rem; border: 1px solid #b9c6d8; border-radius: .65rem; padding: .6rem; }
+.record-history:not(:empty) { margin-top: .75rem; color: var(--muted); font-size: .85rem; }
+.record-history ul { margin: 0; padding-left: 1.2rem; }
 .empty-state { padding: 1.5rem; text-align: center; color: var(--muted); border: 1px dashed #b9c6d8; border-radius: .9rem; }
 
 @media (min-width: 720px) {

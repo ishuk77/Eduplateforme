@@ -95,6 +95,11 @@ dans le JSON. Il est déposé uniquement dans un cookie `HttpOnly`,
 
 ### Grading
 - `POST /grading/systems`
+- `GET /grading/systems`
+- `GET /grading/systems/:id`
+- `PUT /grading/systems/:id`
+- `DELETE /grading/systems/:id`
+- `GET /grading/systems/:id/history`
 - `POST /grading/grades`
 - `GET /grading/grades`
 - `GET /grading/grades/:id`
@@ -114,6 +119,11 @@ dans le JSON. Il est déposé uniquement dans un cookie `HttpOnly`,
 
 ### Scheduling
 - `POST /scheduling/entries`
+- `GET /scheduling/entries`
+- `GET /scheduling/entries/:id`
+- `PUT /scheduling/entries/:id`
+- `DELETE /scheduling/entries/:id`
+- `GET /scheduling/entries/:id/history`
 
 ### Assignments
 - `POST /assignments`
@@ -123,6 +133,11 @@ dans le JSON. Il est déposé uniquement dans un cookie `HttpOnly`,
 - `DELETE /assignments/:id` (archive)
 - `GET /assignments/:id/history`
 - `POST /assignments/submissions`
+- `GET /assignments/submissions`
+- `GET /assignments/submissions/:id`
+- `PUT /assignments/submissions/:id`
+- `DELETE /assignments/submissions/:id`
+- `GET /assignments/submissions/:id/history`
 - `POST /assignments/submissions/grade`
 
 ### Finance
@@ -147,12 +162,28 @@ dans le JSON. Il est déposé uniquement dans un cookie `HttpOnly`,
 
 ### Notifications and governance
 - `POST /notifications`
+- `GET /notifications`
+- `GET /notifications/:id`
+- `PUT /notifications/:id`
+- `DELETE /notifications/:id`
+- `GET /notifications/:id/history`
 - `POST /notifications/sent`
 - `POST /virtual-schools`
+- `GET /virtual-schools`
 - `POST /virtual-schools/trainings`
+- `GET /virtual-schools/trainings`
 - `POST /certificates`
+- `GET /certificates`
 - `POST /i18n/profile`
+- `GET /i18n/profile`
+- `POST /i18n/profiles` et `GET /i18n/profiles` (collection pour l’interface)
 - `POST /security/parental-consents`
+- `GET /security/parental-consents`
+
+Les académies virtuelles, formations, certificats et consentements exposent
+également les variantes `GET /:id`, `PUT /:id`, `DELETE /:id` et
+`GET /:id/history`. Toutes les listes sont filtrées par l’organisation du
+jeton; `organizationId` reste obligatoire pour un compte multi-organisation.
 
 ## Protected CRUD examples
 Each protected route expects a bearer token in the `Authorization` header.

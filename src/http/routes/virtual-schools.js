@@ -1,16 +1,22 @@
-import { parseJson } from '../middleware/validation.js';
-import { authorizeRequest } from '../middleware/auth.js';
+import { makeCrudHandlers } from './_helpers.js';
 
 export function registerVirtualSchoolRoutes(router, { service }) {
-  router.add('POST', '/virtual-schools', async (request) => {
-    const body = await parseJson(request);
-    const identity = authorizeRequest(request, service, { organizationId: body.organizationId, permissions: ['virtual-schools.write'] });
-    return Response.json(await service.createVirtualSchool(body, identity.actorId), { status: 201 });
+  const schoolHandlers = makeCrudHandlers({
+    service, resource: 'virtualSchools',
+    create: (body, actorId) => service.createVirtualSchool(body, actorId),
+    readPermission: 'virtual-schools.read', writePermission: 'virtual-schools.write'
   });
-
-  router.add('POST', '/virtual-schools/trainings', async (request) => {
-    const body = await parseJson(request);
-    const identity = authorizeRequest(request, service, { organizationId: body.organizationId, permissions: ['virtual-schools.write'] });
-    return Response.json(await service.createPaidTraining(body, identity.actorId), { status: 201 });
+  const trainingHandlers = makeCrudHandlers({
+    service, resource: 'paidTrainings',
+    create: (body, actorId) => service.createPaidTraining(body, actorId),
+    readPermission: 'virtual-schools.read', writePermission: 'virtual-schools.write'
   });
+  for (const [path, handlers] of [['/virtual-schools/trainings', trainingHandlers], ['/virtual-schools', schoolHandlers]]) {
+    router.add('POST', path, handlers.create);
+    router.add('GET', path, handlers.list);
+    router.add('GET', `${path}/:id`, handlers.get);
+    router.add('PUT', `${path}/:id`, handlers.update);
+    router.add('DELETE', `${path}/:id`, handlers.remove);
+    router.add('GET', `${path}/:id/history`, handlers.history);
+  }
 }
