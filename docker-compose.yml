@@ -1,0 +1,37 @@
+services:
+  app:
+    image: node:22
+    working_dir: /app
+    command: sh -c "npm ci && npm start"
+    volumes:
+      - .:/app
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://eduplateforme:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/eduplateforme
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?Set DATA_ENCRYPTION_KEY}
+      CORS_ORIGIN: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: eduplateforme
+      POSTGRES_USER: eduplateforme
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eduplateforme -d eduplateforme"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:

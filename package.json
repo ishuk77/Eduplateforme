@@ -1,0 +1,36 @@
+{
+  "name": "eduplateforme",
+  "version": "1.0.0",
+  "description": "Eduplateforme API and responsive application shell",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test",
+    "test:integration": "node --test test/integration/*.test.js",
+    "check": "node --check src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://localhost:26831/ishuk77/Eduplateforme"
+  },
+  "keywords": [
+    "education",
+    "saas",
+    "multitenant"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.13 <23"
+  },
+  "dependencies": {
+    "bcryptjs": "3.0.2",
+    "pg": "8.16.3",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "pg-mem": "^3.0.14"
+  }
+}
