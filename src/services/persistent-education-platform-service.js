@@ -25,6 +25,13 @@ import { FeeConfiguration, Invoice, Payment } from '../domain/finance/finance.js
 import { GradeEntry, GradingSystem } from '../domain/grading/grading.js';
 import { LocalizationProfile } from '../domain/i18n/i18n.js';
 import {
+  DataQualityRule,
+  EmisProfile,
+  ExternalProvider,
+  PlatformRecord,
+  ReferenceEntry
+} from '../domain/learning-systems/learning-systems.js';
+import {
   AcademicLevel,
   AcademicPeriod,
   Accreditation,
@@ -120,6 +127,34 @@ const COLLECTIONS = {
   courses: { hydrate: (value) => new Course(value) },
   learnerLifecycleEvents: { hydrate: (value) => new LearnerLifecycleEvent(value), sensitive: true },
   contextualPermissionRules: { hydrate: (value) => new ContextualPermissionRule(value) },
+  lmsCatalogs: { hydrate: (value) => new PlatformRecord(value) },
+  lmsPrograms: { hydrate: (value) => new PlatformRecord(value) },
+  lmsCourses: { hydrate: (value) => new PlatformRecord(value) },
+  lmsModules: { hydrate: (value) => new PlatformRecord(value) },
+  lmsLessons: { hydrate: (value) => new PlatformRecord(value) },
+  lmsResources: { hydrate: (value) => new PlatformRecord(value) },
+  lmsParticipants: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  lmsEnrollments: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  lmsProgress: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  lmsQuizzes: { hydrate: (value) => new PlatformRecord(value) },
+  lmsQuestions: { hydrate: (value) => new PlatformRecord(value) },
+  lmsAttempts: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  lmsAssessments: { hydrate: (value) => new PlatformRecord(value) },
+  lmsPayments: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  lmsCertificates: { hydrate: (value) => new PlatformRecord(value) },
+  meetingProviders: { hydrate: (value) => new ExternalProvider(value) },
+  meetings: { hydrate: (value) => new PlatformRecord(value) },
+  meetingParticipants: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  meetingAttendance: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  dataQualityRules: { hydrate: (value) => new DataQualityRule(value) },
+  dataQualityRuns: { hydrate: (value) => new PlatformRecord(value) },
+  dataQualityIssues: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  emisProfiles: { hydrate: (value) => new EmisProfile(value) },
+  emisMappings: { hydrate: (value) => new PlatformRecord(value) },
+  emisNationalReferences: { hydrate: (value) => new PlatformRecord(value) },
+  emisExchanges: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  referenceEntries: { hydrate: (value) => new ReferenceEntry(value) },
+  userLocalizationProfiles: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
   events: { hydrate: (value) => new DomainEvent(value), isArray: true }
 };
 
@@ -183,7 +218,35 @@ const RESOURCE_TO_COLLECTION = {
   subjects: 'subjects',
   courses: 'courses',
   learnerLifecycleEvents: 'learnerLifecycleEvents',
-  contextualPermissionRules: 'contextualPermissionRules'
+  contextualPermissionRules: 'contextualPermissionRules',
+  lmsCatalogs: 'lmsCatalogs',
+  lmsPrograms: 'lmsPrograms',
+  lmsCourses: 'lmsCourses',
+  lmsModules: 'lmsModules',
+  lmsLessons: 'lmsLessons',
+  lmsResources: 'lmsResources',
+  lmsParticipants: 'lmsParticipants',
+  lmsEnrollments: 'lmsEnrollments',
+  lmsProgress: 'lmsProgress',
+  lmsQuizzes: 'lmsQuizzes',
+  lmsQuestions: 'lmsQuestions',
+  lmsAttempts: 'lmsAttempts',
+  lmsAssessments: 'lmsAssessments',
+  lmsPayments: 'lmsPayments',
+  lmsCertificates: 'lmsCertificates',
+  meetingProviders: 'meetingProviders',
+  meetings: 'meetings',
+  meetingParticipants: 'meetingParticipants',
+  meetingAttendance: 'meetingAttendance',
+  dataQualityRules: 'dataQualityRules',
+  dataQualityRuns: 'dataQualityRuns',
+  dataQualityIssues: 'dataQualityIssues',
+  emisProfiles: 'emisProfiles',
+  emisMappings: 'emisMappings',
+  emisNationalReferences: 'emisNationalReferences',
+  emisExchanges: 'emisExchanges',
+  referenceEntries: 'referenceEntries',
+  userLocalizationProfiles: 'userLocalizationProfiles'
 };
 
 const RESOURCE_ORGANIZATION_RESOLVER = {
@@ -224,6 +287,11 @@ const TENANT_ADMIN_PERMISSIONS = Object.freeze([
   'profiles.read', 'profiles.write',
   'lifecycle.read', 'lifecycle.write',
   'authorization-matrix.read', 'authorization-matrix.write',
+  'lms.read', 'lms.write',
+  'meetings.read', 'meetings.write',
+  'data-quality.read', 'data-quality.write',
+  'emis.read', 'emis.write',
+  'references.read', 'references.write',
   'audit.read'
 ]);
 
@@ -301,7 +369,10 @@ export class PersistentEducationPlatformService extends EducationPlatformService
           const keySelector = definition.keySelector ?? ((value) => value.id);
           this[collectionKey] = new Map(values.map((value) => [keySelector(value), value]));
         })
-      ).then(() => this);
+      ).then(() => {
+        this.seedStandardReferences();
+        return this;
+      });
     }
 
     for (const [collectionKey, definition] of Object.entries(COLLECTIONS)) {
@@ -314,6 +385,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       const keySelector = definition.keySelector ?? ((value) => value.id);
       this[collectionKey] = new Map(values.map((value) => [keySelector(value), value]));
     }
+    this.seedStandardReferences();
     return this;
   }
 
@@ -535,6 +607,69 @@ export class PersistentEducationPlatformService extends EducationPlatformService
 
   createContextualPermissionRule(input, actorId = null) {
     return this.createInstitutionalRecord('contextualPermissionRules', () => super.createContextualPermissionRule(input, actorId), actorId, 'contextual-permission-rule.create');
+  }
+
+  createPlatformRecord(resource, input, actorId = null) {
+    return this.transactional(() => {
+      const record = super.createPlatformRecord(resource, input, actorId);
+      return this.recordCreate(resource, record, actorId, `${resource}.create`);
+    });
+  }
+
+  submitLmsQuizAttempt(input, actorId = null) {
+    return super.submitLmsQuizAttempt(input, actorId);
+  }
+
+  async runDataQuality(input, actorId = null) {
+    const run = await super.runDataQuality(input, actorId);
+    await this.persistRecord('dataQualityRuns', run, { actorId, action: 'dataQualityRuns.complete' });
+    return run;
+  }
+
+  async transitionDataQualityIssue(issueId, transition, input = {}, actorId = null) {
+    const issue = this.dataQualityIssues.get(issueId);
+    if (transition === 'correct' && input.correction && issue) {
+      await this.updateCrudResource(issue.targetResource, issue.targetId, input.correction, actorId);
+    }
+    return this.transactional(() => {
+      const before = cloneRecord(issue);
+      const updated = super.transitionDataQualityIssue(issueId, transition, input, actorId);
+      return this.recordUpdate('dataQualityIssues', before, updated, actorId, `data-quality.issue.${transition}`);
+    });
+  }
+
+  async importMeetingAttendance(meetingId, actorId = null) {
+    const before = cloneRecord(this.meetings.get(meetingId));
+    const result = await super.importMeetingAttendance(meetingId, actorId);
+    const meeting = this.meetings.get(meetingId);
+    await this.transactional(() =>
+      this.recordUpdate('meetings', before, meeting, actorId, `meeting.attendance.${result.state}`)
+    );
+    return result;
+  }
+
+  correctEmisExchange(exchangeId, input, actorId = null) {
+    const before = cloneRecord(this.emisExchanges.get(exchangeId));
+    const exchange = super.correctEmisExchange(exchangeId, input, actorId);
+    return this.transactional(() =>
+      this.recordUpdate('emisExchanges', before, exchange, actorId, 'emis.exchange.corrected')
+    );
+  }
+
+  async transmitEmisExchange(exchangeId, actorId = null, options = {}) {
+    const before = cloneRecord(this.emisExchanges.get(exchangeId));
+    const exchange = await super.transmitEmisExchange(exchangeId, actorId, options);
+    return this.transactional(() =>
+      this.recordUpdate('emisExchanges', before, exchange, actorId, `emis.exchange.${exchange.exchangeState}`)
+    );
+  }
+
+  acknowledgeEmisExchange(exchangeId, input, actorId = null) {
+    const before = cloneRecord(this.emisExchanges.get(exchangeId));
+    const exchange = super.acknowledgeEmisExchange(exchangeId, input, actorId);
+    return this.transactional(() =>
+      this.recordUpdate('emisExchanges', before, exchange, actorId, `emis.exchange.${exchange.exchangeState}`)
+    );
   }
 
   registerDocument(input, actorId = null) {
@@ -1691,6 +1826,9 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     )) {
       throw new ValidationError('Account organization memberships cannot be changed through generic updates.');
     }
+    if (resource === 'referenceEntries' && collection.get(id).standard) {
+      throw new ValidationError('Standard reference entries are immutable.');
+    }
     if ([
       'operatingAuthorizations',
       'accreditations',
@@ -1718,6 +1856,20 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       'classId',
       'feeConfigurationId',
       'invoiceId',
+      'catalogId',
+      'academicProgramId',
+      'courseId',
+      'moduleId',
+      'lessonId',
+      'participantId',
+      'enrollmentId',
+      'quizId',
+      'providerId',
+      'meetingId',
+      'profileId',
+      'credentialId',
+      'paymentId',
+      'externalMeetingId',
       'parentPersonId',
       'guardianProfileId',
       'professionalProfileId',
@@ -1784,6 +1936,11 @@ export class PersistentEducationPlatformService extends EducationPlatformService
         'consents',
         'collaborationRequests',
         'transfers'
+        ,
+        'meetingProviders',
+        'dataQualityRules',
+        'emisProfiles',
+        'referenceEntries'
       ]);
       const candidate = { ...entity };
       for (const [key, value] of Object.entries(patch)) {
@@ -1805,6 +1962,9 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     const collection = this[collectionKey];
     if (!collectionKey || !collection?.has(id)) {
       throw new ValidationError(`Unknown ${resource}: ${id}`);
+    }
+    if (resource === 'referenceEntries' && collection.get(id).standard) {
+      throw new ValidationError('Standard reference entries are immutable.');
     }
 
     return this.transactional(() => {

@@ -159,6 +159,44 @@ ancien/nouveau contexte, motif, preuve et autorité.
 - `GET /grading/grades/:id/history`
 - `GET /grading/average?organizationId=<orgId>&learnerId=<learnerId>`
 
+### LMS et visioconférence
+- CRUD + historique : `/lms/catalogs`, `/lms/programs`, `/lms/courses`,
+  `/lms/modules`, `/lms/lessons`, `/lms/resources`, `/lms/participants`,
+  `/lms/enrollments`, `/lms/progress`, `/lms/quizzes`, `/lms/questions`,
+  `/lms/attempts`, `/lms/assessments`, `/lms/payments`, `/lms/certificates`
+- `POST /lms/quizzes/:id/attempts`
+- CRUD + historique : `/meetings/providers`, `/meetings`,
+  `/meetings/participants`, `/meetings/attendance`
+- `POST /meetings/:id/join`
+- `POST /meetings/:id/attendance/import`
+
+Les contenus binaires restent des références externes. Un fournisseur de
+réunion ne contient que de la configuration non secrète et une clé
+d’adaptateur serveur. Sans adaptateur, l’import de présence retourne
+`pending_external`.
+
+### Data Quality Center, EMIS et référentiels
+- CRUD + historique : `/data-quality/rules`, `/data-quality/runs`,
+  `/data-quality/issues`
+- `POST /data-quality/runs/execute`
+- `POST /data-quality/issues/:id/correct`
+- `POST /data-quality/issues/:id/validate`
+- `POST /data-quality/prevalidate-export`
+- CRUD + historique : `/emis/profiles`, `/emis/mappings`,
+  `/emis/national-references`, `/emis/exchanges`
+- `POST /emis/exchanges/:id/transmit`
+- `POST /emis/exchanges/:id/retransmit`
+- `POST /emis/exchanges/:id/correct`
+- `POST /emis/exchanges/:id/acknowledge`
+- CRUD + historique : `/references/entries`
+- `GET /references/:catalog`
+- CRUD + historique : `/i18n/user-profiles`
+- `POST /i18n/format`
+
+Les profils EMIS sont propres à un pays et ne supposent aucun format
+universel. Une transmission sans transport injecté reste
+`pending_external`; les erreurs et toutes les tentatives sont conservées.
+
 ### Attendance
 - `POST /attendance/records`
 - `GET /attendance/records`

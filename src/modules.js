@@ -71,6 +71,11 @@ export const modules = [
   { id: 'virtualSchools', path: '/virtual-schools', label: 'Académie virtuelle', eyebrow: 'Formation', title: 'Académie virtuelle', description: 'Académies et formations payantes.', highlights: [] },
   { id: 'certificates', path: '/certificates', label: 'Certificats', eyebrow: 'Attestations', title: 'Certificats', description: 'Certificats vérifiables.', highlights: [] },
   { id: 'i18n', path: '/i18n', label: 'Localisation', eyebrow: 'Profil régional', title: 'Localisation', description: 'Langue, devise et fuseau.', highlights: [] },
+  { id: 'lms', path: '/lms', label: 'LMS', eyebrow: 'Apprentissage numérique', title: 'LMS', description: 'Catalogues, parcours, contenus, évaluations et progression reliés au cursus académique.', highlights: ['Progression réelle', 'Quiz et examens', 'Finance et credentials'] },
+  { id: 'meetings', path: '/meetings', label: 'Visioconférence', eyebrow: 'Fournisseurs externes', title: 'Visioconférence', description: 'Préparez et suivez les réunions externes sans simuler de visioconférence interne.', highlights: ['Permissions', 'Présence importée', 'Aucun secret stocké'] },
+  { id: 'dataQuality', path: '/data-quality', label: 'Qualité des données', eyebrow: 'Contrôle', title: 'Data Quality Center', description: 'Mesurez, corrigez et validez la qualité avant les échanges.', highlights: ['Règles configurables', 'Score traçable', 'Prévalidation export'] },
+  { id: 'emis', path: '/emis', label: 'EMIS', eyebrow: 'Interopérabilité nationale', title: 'EMIS', description: 'Préparez, validez et transmettez des échanges adaptés à chaque pays et connecteur.', highlights: ['Mappings locaux', 'Référentiels nationaux', 'Réémission auditée'] },
+  { id: 'references', path: '/references', label: 'Référentiels', eyebrow: 'Standards extensibles', title: 'Référentiels', description: 'ISO, ISCED et extensions propres au pays ou au tenant.', highlights: ['ISO', 'ISCED', 'Extensions tenant'] },
   { id: 'parentalConsents', path: '/security/parental-consents', label: 'Consentements', eyebrow: 'Protection', title: 'Consentements parentaux', description: 'Consentements parentaux traçables.', highlights: [] },
   {
     id: 'communications',
