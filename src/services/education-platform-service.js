@@ -1340,6 +1340,15 @@ export class EducationPlatformService extends FoundationService {
         'emis',
         'reference-data',
         'subscriptions',
+        'privacy-aware-analytics',
+        'role-dashboards',
+        'accessible-responsive-ui',
+        'offline-synchronization',
+        'mfa-and-session-management',
+        'operations-and-disaster-recovery',
+        'support-center',
+        'saas-entitlements',
+        'human-governed-ai-assistance',
         'audit',
         'security',
         'rest-api',
@@ -1352,7 +1361,11 @@ export class EducationPlatformService extends FoundationService {
         'child-related actions require explicit parental consent records'
         ,
         'external meeting and EMIS success requires an injected provider adapter',
-        'reference and localization rules remain tenant and country configurable'
+        'reference and localization rules remain tenant and country configurable',
+        'offline writes never finalize grades or official sensitive records',
+        'analytics suppress cohorts below the configured privacy threshold',
+        'AI assistance never makes autonomous high-impact education decisions',
+        'external operations remain pending until a configured provider confirms them'
       ],
       modules: [
         ...foundation.modules,
@@ -1375,7 +1388,12 @@ export class EducationPlatformService extends FoundationService {
         'meetings',
         'data-quality',
         'emis',
-        'references'
+        'references',
+        'analytics',
+        'support',
+        'saas',
+        'operations',
+        'ai-assistance'
       ],
       summary: {
         ...foundation.summary,
@@ -1405,7 +1423,12 @@ export class EducationPlatformService extends FoundationService {
         meetings: this.meetings.size,
         dataQualityIssues: this.dataQualityIssues.size,
         emisExchanges: this.emisExchanges.size,
-        referenceEntries: this.referenceEntries.size
+        referenceEntries: this.referenceEntries.size,
+        analyticsConfigurations: this.analyticsConfigurations?.size ?? 0,
+        supportTickets: this.supportTickets?.size ?? 0,
+        saasPlans: this.saasPlans?.size ?? 0,
+        backupOperations: this.backupOperations?.size ?? 0,
+        aiAssistanceRequests: this.aiAssistanceRequests?.size ?? 0
       }
     };
   }

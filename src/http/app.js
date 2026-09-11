@@ -29,6 +29,7 @@ import { registerSecurityRoutes } from './routes/security.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { registerInstitutionalRoutes } from './routes/institutional.js';
 import { registerLearningSystemRoutes } from './routes/learning-systems.js';
+import { registerOperationsRoutes } from './routes/operations.js';
 import { modules, resolveModule } from '../modules.js';
 import { renderAppShell } from '../template.js';
 import { ApiError } from '../shared/errors.js';
@@ -38,7 +39,8 @@ const publicDirectoryPath = join(currentDirectoryPath, '../../public');
 const contentTypes = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
-  '.webmanifest': 'application/manifest+json; charset=utf-8'
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.svg': 'image/svg+xml'
 };
 
 function getCorsOrigin(request) {
@@ -176,7 +178,19 @@ function createOpenApiDescription() {
       '/academics/subjects': { get: { summary: 'List subjects' }, post: { summary: 'Create subject' } },
       '/academics/courses': { get: { summary: 'List contextual courses' }, post: { summary: 'Create course' } },
       '/academics/lifecycle-events': { get: { summary: 'List longitudinal learner events' }, post: { summary: 'Record learner event' } },
-      '/security/contextual-permissions': { get: { summary: 'List contextual RBAC rules' }, post: { summary: 'Create contextual RBAC rule' } }
+      '/security/contextual-permissions': { get: { summary: 'List contextual RBAC rules' }, post: { summary: 'Create contextual RBAC rule' } },
+      '/dashboards/me': { get: { summary: 'Return the permission-aware dashboard for the current role' } },
+      '/analytics': { get: { summary: 'Calculate privacy-aware tenant analytics' } },
+      '/analytics/export': { get: { summary: 'Export analytics as structured CSV or JSON' } },
+      '/auth/mfa/enroll': { post: { summary: 'Enroll TOTP and issue one-time recovery codes' } },
+      '/auth/mfa/challenge': { post: { summary: 'Complete an MFA authentication challenge' } },
+      '/auth/sessions': { get: { summary: 'List account sessions' } },
+      '/offline/synchronize': { post: { summary: 'Synchronize authorized idempotent offline mutations' } },
+      '/support/tickets': { get: { summary: 'List support tickets' }, post: { summary: 'Create support ticket' } },
+      '/saas/entitlements/check': { post: { summary: 'Check a plan feature and its quotas' } },
+      '/operations/backups/request': { post: { summary: 'Register a backup, restore or integrity-test request' } },
+      '/operations/status': { get: { summary: 'Return incident-backed service status' } },
+      '/ai/assist': { post: { summary: 'Request consented assistive AI with high-impact guardrails' } }
     }
   };
 }
@@ -208,6 +222,7 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
   registerAuditRoutes(router, context);
   registerInstitutionalRoutes(router, context);
   registerLearningSystemRoutes(router, context);
+  registerOperationsRoutes(router, context);
 
   return async function app(request) {
     let corsOrigin = null;
@@ -229,8 +244,23 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
         }
       }
 
+      if (request.method === 'GET' && url.pathname === '/readyz') {
+        const readiness = await foundation.readinessCheck();
+        return withSecurityHeaders(Response.json(readiness, {
+          status: readiness.status === 'ready' ? 200 : 503
+        }), null);
+      }
+
+      if (request.method === 'GET' && url.pathname === '/metrics') {
+        const metrics = await foundation.getMetrics();
+        const body = Object.entries(metrics).map(([key, value]) => `${key} ${value}`).join('\n');
+        return withSecurityHeaders(new Response(`${body}\n`, {
+          headers: { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' }
+        }), null);
+      }
+
       enforceRateLimit(request, { namespace: 'api' });
-      if (url.pathname === '/auth/login' || url.pathname === '/auth/register' || url.pathname === '/auth/refresh') {
+      if (['/auth/login', '/auth/register', '/auth/refresh', '/auth/mfa/challenge', '/auth/mfa/confirm'].includes(url.pathname)) {
         enforceRateLimit(request, {
           namespace: 'authentication',
           limit: Number.parseInt(process.env.AUTH_RATE_LIMIT_MAX ?? '10', 10),
@@ -246,7 +276,7 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
         return withSecurityHeaders(new Response(null, { status: 204 }), corsOrigin);
       }
 
-      if (request.method === 'GET' && (url.pathname === '/styles.css' || url.pathname === '/app.js' || url.pathname === '/manifest.webmanifest')) {
+      if (request.method === 'GET' && ['/styles.css', '/app.js', '/service-worker.js', '/manifest.webmanifest', '/icon.svg'].includes(url.pathname)) {
         return withSecurityHeaders(await serveStaticAsset(url.pathname), corsOrigin);
       }
 

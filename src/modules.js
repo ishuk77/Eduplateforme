@@ -76,6 +76,11 @@ export const modules = [
   { id: 'dataQuality', path: '/data-quality', label: 'Qualité des données', eyebrow: 'Contrôle', title: 'Data Quality Center', description: 'Mesurez, corrigez et validez la qualité avant les échanges.', highlights: ['Règles configurables', 'Score traçable', 'Prévalidation export'] },
   { id: 'emis', path: '/emis', label: 'EMIS', eyebrow: 'Interopérabilité nationale', title: 'EMIS', description: 'Préparez, validez et transmettez des échanges adaptés à chaque pays et connecteur.', highlights: ['Mappings locaux', 'Référentiels nationaux', 'Réémission auditée'] },
   { id: 'references', path: '/references', label: 'Référentiels', eyebrow: 'Standards extensibles', title: 'Référentiels', description: 'ISO, ISCED et extensions propres au pays ou au tenant.', highlights: ['ISO', 'ISCED', 'Extensions tenant'] },
+  { id: 'analytics', path: '/analytics', label: 'Analytics', eyebrow: 'Pilotage confidentiel', title: 'Analytics', description: 'Indicateurs, palmarès, filtres et exports calculés sur les données tenant.', highlights: ['Confidentialité', 'Méthodes configurables', 'Exports structurés'] },
+  { id: 'support', path: '/support', label: 'Aide & support', eyebrow: 'Centre de service', title: 'Support', description: 'FAQ, guides et tickets L1 à L4 avec historique.', highlights: ['FAQ', 'Tickets', 'Escalade'] },
+  { id: 'saas', path: '/saas', label: 'Plans & quotas', eyebrow: 'SaaS', title: 'Plans & quotas', description: 'Entitlements et quotas contrôlés sans simuler la facturation externe.', highlights: ['Plans', 'Quotas', 'Essais'] },
+  { id: 'operations', path: '/operations', label: 'Exploitation', eyebrow: 'Résilience', title: 'Exploitation', description: 'Sauvegardes, PRA, incidents et statut de service.', highlights: ['RPO/RTO', 'Intégrité', 'Incidents'] },
+  { id: 'ai', path: '/ai', label: 'Assistance IA', eyebrow: 'Humain responsable', title: 'Assistance IA', description: 'Demandes consenties et auditables, sans décision autonome à fort impact.', highlights: ['Consentement', 'Audit', 'Garde-fous'] },
   { id: 'parentalConsents', path: '/security/parental-consents', label: 'Consentements', eyebrow: 'Protection', title: 'Consentements parentaux', description: 'Consentements parentaux traçables.', highlights: [] },
   {
     id: 'communications',

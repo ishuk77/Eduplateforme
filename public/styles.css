@@ -16,6 +16,19 @@
 * { box-sizing: border-box;
 }
 
+.skip-link {
+  position: fixed;
+  top: .5rem;
+  left: .5rem;
+  z-index: 100;
+  padding: .75rem 1rem;
+  border-radius: .5rem;
+  background: #fff;
+  color: #10213d;
+  transform: translateY(-150%);
+}
+.skip-link:focus { transform: translateY(0); }
+
 .sr-only {
 position: absolute;
 width: 1px;
@@ -29,6 +42,7 @@ border: 0; }
 body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
 a { color: inherit; text-decoration: none; }
 button, input, select, textarea { font: inherit; }
+button, input, select { min-height: 44px; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: 3px solid rgba(36, 88, 211, 0.28);
@@ -85,6 +99,7 @@ button:disabled { cursor: wait; opacity: .6; }
 .topbar { height: 4.5rem; display: flex; align-items: center; justify-content: space-between; width: min(72rem, calc(100% - 2rem)); margin: auto; }
 .menu-toggle { background: white; border-color: var(--border); color: var(--text); }
 .organization-chip { padding: .45rem .75rem; border-radius: 999px; background: #eaf0ff; color: var(--primary); font-size: .8rem; font-weight: 700; }
+.sync-status { color: var(--muted); font-size: .82rem; font-weight: 700; }
 .content-stack { width: min(72rem, calc(100% - 2rem)); margin: auto; padding-bottom: 2rem; display: grid; gap: 1rem; }
 .page-heading { padding: 1rem 0; }
 .page-heading h1 { margin-bottom: .7rem; }
@@ -138,4 +153,18 @@ button:disabled { cursor: wait; opacity: .6; }
   .form-grid, .data-card dl { grid-template-columns: 1fr; }
   .form-grid > * { grid-column: 1; }
   .hero-actions > *, .form-actions > * { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root { --border: #53657f; --muted: #34435b; }
+  .primary-button { background: #123889; }
 }

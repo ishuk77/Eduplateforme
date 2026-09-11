@@ -20,8 +20,9 @@ export function renderAppShell({ currentModule }) {
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Aller au contenu principal</a>
     <div id="app" aria-live="polite">
-      <main class="public-layout">
+      <main class="public-layout" id="main-content">
         <section class="surface-card loading-card">
           <p class="section-label">Eduplateforme</p>
           <h1>Chargement de votre espace…</h1>

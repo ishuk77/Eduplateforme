@@ -32,6 +32,14 @@ import {
   ReferenceEntry
 } from '../domain/learning-systems/learning-systems.js';
 import {
+  AnalyticsConfiguration,
+  HIGH_IMPACT_AI_ACTIONS,
+  OperationalRecord,
+  SAFE_AI_ASSISTANCE_ACTIONS,
+  SaasPlan,
+  SupportTicket
+} from '../domain/operations/operations.js';
+import {
   AcademicLevel,
   AcademicPeriod,
   Accreditation,
@@ -71,6 +79,14 @@ import { CalendarEventRepository } from '../db/repositories/calendar-event-repos
 import { SubscriptionRepository } from '../db/repositories/subscription-repository.js';
 import { hashPassword, verifyPassword } from '../security/passwords.js';
 import { createRefreshToken, signJwt, verifyJwt } from '../security/tokens.js';
+import {
+  createRecoveryCodes,
+  createTotpSecret,
+  decryptMfaSecret,
+  encryptMfaSecret,
+  hashRecoveryCode,
+  verifyTotp
+} from '../security/totp.js';
 
 const COLLECTIONS = {
   organizations: { hydrate: (value) => new Organization(value), repository: (connection) => new OrganizationRepository({ connection }) },
@@ -155,6 +171,15 @@ const COLLECTIONS = {
   emisExchanges: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
   referenceEntries: { hydrate: (value) => new ReferenceEntry(value) },
   userLocalizationProfiles: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  analyticsConfigurations: { hydrate: (value) => new AnalyticsConfiguration(value) },
+  supportTickets: { hydrate: (value) => new SupportTicket(value), sensitive: true },
+  saasPlans: { hydrate: (value) => new SaasPlan(value) },
+  tenantSubscriptions: { hydrate: (value) => new OperationalRecord(value), sensitive: true },
+  backupConfigurations: { hydrate: (value) => new OperationalRecord(value), sensitive: true },
+  backupOperations: { hydrate: (value) => new OperationalRecord(value), sensitive: true },
+  aiAssistanceRequests: { hydrate: (value) => new OperationalRecord(value), sensitive: true },
+  incidents: { hydrate: (value) => new OperationalRecord(value) },
+  syncJournal: { hydrate: (value) => new OperationalRecord(value), sensitive: true },
   events: { hydrate: (value) => new DomainEvent(value), isArray: true }
 };
 
@@ -246,7 +271,16 @@ const RESOURCE_TO_COLLECTION = {
   emisNationalReferences: 'emisNationalReferences',
   emisExchanges: 'emisExchanges',
   referenceEntries: 'referenceEntries',
-  userLocalizationProfiles: 'userLocalizationProfiles'
+  userLocalizationProfiles: 'userLocalizationProfiles',
+  analyticsConfigurations: 'analyticsConfigurations',
+  supportTickets: 'supportTickets',
+  saasPlans: 'saasPlans',
+  tenantSubscriptions: 'tenantSubscriptions',
+  backupConfigurations: 'backupConfigurations',
+  backupOperations: 'backupOperations',
+  aiAssistanceRequests: 'aiAssistanceRequests',
+  incidents: 'incidents',
+  syncJournal: 'syncJournal'
 };
 
 const RESOURCE_ORGANIZATION_RESOLVER = {
@@ -292,6 +326,11 @@ const TENANT_ADMIN_PERMISSIONS = Object.freeze([
   'data-quality.read', 'data-quality.write',
   'emis.read', 'emis.write',
   'references.read', 'references.write',
+  'analytics.read', 'analytics.write', 'analytics.export',
+  'support.read', 'support.write',
+  'saas.read', 'saas.write',
+  'operations.read', 'operations.write',
+  'ai-assistance.read', 'ai-assistance.write',
   'audit.read'
 ]);
 
@@ -470,8 +509,8 @@ export class PersistentEducationPlatformService extends EducationPlatformService
   }
 
   recordUpdate(collectionKey, before, after, actorId, action, { context = {}, reason = null } = {}) {
-    this.persistRecord(collectionKey, after, { actorId, action });
-    this.writeAuditEntry({
+    const persistence = this.persistRecord(collectionKey, after, { actorId, action });
+    const audit = this.writeAuditEntry({
       actorId,
       organizationId: after.organizationId ?? before?.organizationId ?? null,
       entityType: after.constructor?.name ?? collectionKey,
@@ -482,6 +521,9 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       context,
       reason
     });
+    if (persistence instanceof Promise || audit instanceof Promise) {
+      return Promise.all([persistence, audit]).then(() => after);
+    }
     return after;
   }
 
@@ -1486,6 +1528,21 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       after: { organizationId: resolvedOrganizationId }
     });
 
+    const mfa = await this.connection.get(
+      "SELECT state FROM mfa_settings WHERE account_id = ? AND state = 'enabled'",
+      [account.id]
+    );
+    if (mfa) {
+      return {
+        mfaRequired: true,
+        challengeToken: signJwt({
+          sub: account.id,
+          organizationId: resolvedOrganizationId,
+          purpose: 'mfa-challenge'
+        }, { expiresInSeconds: 300 })
+      };
+    }
+
     return this.createAuthenticationSession(account, resolvedOrganizationId);
   }
 
@@ -1940,7 +1997,16 @@ export class PersistentEducationPlatformService extends EducationPlatformService
         'meetingProviders',
         'dataQualityRules',
         'emisProfiles',
-        'referenceEntries'
+        'referenceEntries',
+        'analyticsConfigurations',
+        'supportTickets',
+        'saasPlans',
+        'tenantSubscriptions',
+        'backupConfigurations',
+        'backupOperations',
+        'aiAssistanceRequests',
+        'incidents',
+        'syncJournal'
       ]);
       const candidate = { ...entity };
       for (const [key, value] of Object.entries(patch)) {
@@ -2045,6 +2111,541 @@ export class PersistentEducationPlatformService extends EducationPlatformService
         limit: normalizedLimit,
         offset: normalizedOffset
       }
+    };
+  }
+
+  createOperationalRecord(collectionKey, input, actorId, action) {
+    this.assertOrganizationContext(input.organizationId);
+    const constructors = {
+      analyticsConfigurations: AnalyticsConfiguration,
+      supportTickets: SupportTicket,
+      saasPlans: SaasPlan
+    };
+    const RecordType = constructors[collectionKey] ?? OperationalRecord;
+    return this.transactional(() =>
+      this.recordCreate(collectionKey, new RecordType(input), actorId, action)
+    );
+  }
+
+  getRoleCodes(accountId, organizationId) {
+    const account = this.accounts.get(accountId);
+    if (!account) return [];
+    return [...this.roleAssignments.values()]
+      .filter((assignment) =>
+        assignment.personId === account.personId
+        && assignment.organizationId === organizationId
+        && assignment.status !== 'archived'
+      )
+      .map((assignment) => this.roles.get(assignment.roleId)?.code)
+      .filter(Boolean);
+  }
+
+  buildAnalytics({ organizationId, filters = {}, privacyMinimum = null } = {}) {
+    this.assertOrganizationContext(organizationId);
+    const configuration = [...this.analyticsConfigurations.values()]
+      .find((item) => item.organizationId === organizationId && item.status !== 'archived');
+    const minimum = Number(privacyMinimum ?? configuration?.privacyMinimum ?? 5);
+    const resolveContext = (record) => {
+      const enrollment = record.learnerId
+        ? [...this.enrollments.values()].find((item) =>
+          item.organizationId === organizationId
+          && item.learnerId === record.learnerId
+          && item.status !== 'archived'
+        )
+        : null;
+      const assignment = record.assignmentId ? this.assignments.get(record.assignmentId) : null;
+      const classId = record.classId ?? assignment?.classId ?? enrollment?.classId ?? null;
+      const learningClass = classId ? this.classes.get(classId) : null;
+      return {
+        classId,
+        programId: record.programId ?? learningClass?.programId ?? enrollment?.programId ?? null,
+        levelCode: record.levelCode ?? learningClass?.levelCode ?? null,
+        campusId: record.campusId ?? learningClass?.campusId ?? null,
+        subjectId: record.subjectId ?? assignment?.subjectId ?? null
+      };
+    };
+    const matches = (record) => {
+      if (record.organizationId !== organizationId || record.status === 'archived') return false;
+      const context = resolveContext(record);
+      return Object.entries(filters).every(([key, value]) => {
+        if (value == null || value === '') return true;
+        if (key === 'period') {
+          const timestamp = Date.parse(record.date ?? record.createdAt ?? 0);
+          const [from, to] = String(value).split(',');
+          return (!from || timestamp >= Date.parse(from)) && (!to || timestamp <= Date.parse(to));
+        }
+        return matchesFilterValue(record[key] ?? context[key], value);
+      });
+    };
+    const values = {
+      headcount: [...this.learners.values()].filter(matches).length,
+      enrollments: [...this.enrollments.values()].filter(matches).length,
+      attendance: [...this.attendance.values()].filter(matches),
+      grades: [...this.grades.values()].filter(matches),
+      progress: [...this.lmsProgress.values()].filter(matches),
+      finance: [...this.payments.values()].filter(matches),
+      lmsActivity: [...this.lmsAttempts.values()].filter(matches),
+      quality: [...this.dataQualityRuns.values()].filter(matches)
+    };
+    const attendanceRate = values.attendance.length
+      ? (values.attendance.filter((item) => !['absent', 'unexcused'].includes(item.status)).length / values.attendance.length) * 100
+      : null;
+    const resultAverage = values.grades.length
+      ? values.grades.reduce((sum, item) => sum + ((Number(item.score) / Number(item.maxScore || 20)) * 20), 0) / values.grades.length
+      : null;
+    const progressionAverage = values.progress.length
+      ? values.progress.reduce((sum, item) => sum + Number(item.percent ?? 0), 0) / values.progress.length
+      : null;
+    const metrics = {
+      headcount: values.headcount,
+      enrollments: values.enrollments,
+      attendanceRate,
+      resultAverage,
+      progressionAverage,
+      financeCollected: values.finance.reduce((sum, item) => sum + Number(item.amount ?? 0), 0),
+      lmsActivityCount: values.lmsActivity.length,
+      dataQualityScore: values.quality.at(-1)?.score ?? null
+    };
+    const cohortSize = Math.max(
+      values.headcount,
+      values.enrollments,
+      new Set(values.grades.map((item) => item.learnerId)).size
+    );
+    const suppressed = cohortSize > 0 && cohortSize < minimum;
+    const learnerResults = new Map();
+    for (const grade of values.grades) {
+      const current = learnerResults.get(grade.learnerId) ?? { points: 0, weight: 0 };
+      const weight = Number(grade.coefficient ?? 1);
+      current.points += (Number(grade.score) / Number(grade.maxScore || 20)) * 20 * weight;
+      current.weight += weight;
+      learnerResults.set(grade.learnerId, current);
+    }
+    const rankings = suppressed ? [] : [...learnerResults.entries()]
+      .map(([learnerId, result]) => ({
+        learnerId,
+        score: result.weight ? Number((result.points / result.weight).toFixed(2)) : null
+      }))
+      .sort((left, right) => (right.score ?? -1) - (left.score ?? -1))
+      .map((entry, index) => ({ rank: index + 1, ...entry }));
+    return {
+      organizationId,
+      filters,
+      privacy: {
+        minimumCohortSize: minimum,
+        suppressed,
+        reason: suppressed ? 'cohort_below_privacy_threshold' : null
+      },
+      calculationMethods: {
+        attendance: configuration?.calculationMethods?.attendance ?? 'present_or_excused_over_records',
+        results: configuration?.calculationMethods?.results ?? 'normalized_mean_over_20',
+        progression: configuration?.calculationMethods?.progression ?? 'mean_percent',
+        finance: configuration?.calculationMethods?.finance ?? 'sum_recorded_payments'
+      },
+      metrics: suppressed
+        ? Object.fromEntries(Object.keys(metrics).map((key) => [key, null]))
+        : metrics,
+      rankings: {
+        scope: filters.classId ? 'class' : filters.levelCode ? 'level' : 'general',
+        subjectId: filters.subjectId ?? null,
+        items: rankings
+      }
+    };
+  }
+
+  exportAnalytics(input) {
+    const report = this.buildAnalytics(input);
+    const rows = Object.entries(report.metrics).map(([metric, value]) => ({
+      metric,
+      value,
+      suppressed: report.privacy.suppressed
+    }));
+    if (input.format === 'csv') {
+      const escape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+      return {
+        contentType: 'text/csv; charset=utf-8',
+        filename: `analytics-${input.organizationId}.csv`,
+        body: ['metric,value,suppressed', ...rows.map((row) =>
+          [row.metric, row.value, row.suppressed].map(escape).join(',')
+        )].join('\n')
+      };
+    }
+    return {
+      contentType: 'application/json; charset=utf-8',
+      filename: `analytics-${input.organizationId}.json`,
+      body: JSON.stringify({ ...report, rows })
+    };
+  }
+
+  getRoleDashboard(accountId, organizationId) {
+    const permissions = this.getAccountPermissions(accountId, organizationId);
+    const roles = this.getRoleCodes(accountId, organizationId);
+    const role = roles[0] ?? 'learner';
+    const cardsByRole = {
+      admin: ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'financeCollected', 'dataQualityScore'],
+      'tenant-admin': ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'financeCollected', 'dataQualityScore'],
+      direction: ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'dataQualityScore'],
+      teacher: ['attendanceRate', 'resultAverage', 'progressionAverage'],
+      enseignant: ['attendanceRate', 'resultAverage', 'progressionAverage'],
+      learner: ['resultAverage', 'attendanceRate', 'progressionAverage'],
+      apprenant: ['resultAverage', 'attendanceRate', 'progressionAverage'],
+      parent: ['resultAverage', 'attendanceRate', 'progressionAverage'],
+      student: ['resultAverage', 'progressionAverage', 'lmsActivityCount'],
+      'university-student': ['resultAverage', 'progressionAverage', 'lmsActivityCount'],
+      'etudiant-universitaire': ['resultAverage', 'progressionAverage', 'lmsActivityCount'],
+      trainer: ['progressionAverage', 'lmsActivityCount'],
+      formateur: ['progressionAverage', 'lmsActivityCount'],
+      finance: ['enrollments', 'financeCollected'],
+      support: ['dataQualityScore', 'lmsActivityCount']
+    };
+    const analytics = permissions.includes('*') || permissions.includes('analytics.read')
+      ? this.buildAnalytics({ organizationId })
+      : { metrics: {} };
+    return {
+      role,
+      roles,
+      cards: (cardsByRole[role] ?? cardsByRole.learner)
+        .filter((metric) => Object.hasOwn(analytics.metrics, metric))
+        .map((metric) => ({ metric, value: analytics.metrics[metric] })),
+      availableModules: [
+        ['analytics', 'analytics.read'],
+        ['support', 'support.read'],
+        ['saas', 'saas.read'],
+        ['operations', 'operations.read'],
+        ['ai-assistance', 'ai-assistance.read']
+      ].filter(([, permission]) => permissions.includes('*') || permissions.includes(permission))
+        .map(([module]) => module)
+    };
+  }
+
+  async enrollMfa(accountId, currentCode = null) {
+    if (!this.accounts.has(accountId)) throw new ValidationError(`Unknown account: ${accountId}`);
+    const existing = await this.connection.get(
+      'SELECT state FROM mfa_settings WHERE account_id = ?',
+      [accountId]
+    );
+    if (existing?.state === 'enabled') {
+      if (!currentCode) throw new ValidationError('Current MFA code is required to replace an enabled factor.');
+      await this.verifyMfaCode(accountId, currentCode);
+    }
+    const secret = createTotpSecret();
+    const recoveryCodes = createRecoveryCodes();
+    await this.connection.run(
+      `INSERT INTO mfa_settings(
+         account_id, encrypted_secret, recovery_hashes, pending_encrypted_secret,
+         pending_recovery_hashes, state, enrolled_at, confirmed_at, disabled_at
+       ) VALUES (?, '', '[]', ?, ?, 'pending', ?, NULL, NULL)
+       ON CONFLICT(account_id) DO UPDATE SET
+         pending_encrypted_secret = excluded.pending_encrypted_secret,
+         pending_recovery_hashes = excluded.pending_recovery_hashes,
+         state = CASE WHEN mfa_settings.state = 'enabled' THEN 'enabled' ELSE 'pending' END,
+         enrolled_at = excluded.enrolled_at, disabled_at = NULL`,
+      [
+        accountId,
+        encryptMfaSecret(secret),
+        JSON.stringify(recoveryCodes.map(hashRecoveryCode)),
+        new Date().toISOString()
+      ]
+    );
+    const account = this.accounts.get(accountId);
+    return {
+      secret,
+      recoveryCodes,
+      otpauthUri: `otpauth://totp/Eduplateforme:${encodeURIComponent(account.username)}?secret=${secret}&issuer=Eduplateforme`
+    };
+  }
+
+  async confirmMfa(accountId, code) {
+    const row = await this.connection.get(
+      'SELECT pending_encrypted_secret, state FROM mfa_settings WHERE account_id = ?',
+      [accountId]
+    );
+    if (!row?.pending_encrypted_secret
+      || !['pending', 'enabled'].includes(row.state)
+      || !verifyTotp(decryptMfaSecret(row.pending_encrypted_secret), code)) {
+      throw new ValidationError('MFA confirmation code is invalid.');
+    }
+    await this.connection.run(
+      `UPDATE mfa_settings SET state = 'enabled',
+         encrypted_secret = pending_encrypted_secret,
+         recovery_hashes = pending_recovery_hashes,
+         pending_encrypted_secret = NULL,
+         pending_recovery_hashes = NULL,
+         confirmed_at = ?
+       WHERE account_id = ?`,
+      [new Date().toISOString(), accountId]
+    );
+    await this.writeAuditEntry({
+      actorId: accountId,
+      entityType: 'MfaSetting',
+      entityId: accountId,
+      action: 'mfa.enabled'
+    });
+    return { enabled: true };
+  }
+
+  async disableMfa(accountId, code) {
+    await this.verifyMfaCode(accountId, code);
+    await this.connection.run(
+      `UPDATE mfa_settings SET state = 'disabled', encrypted_secret = '', recovery_hashes = '[]',
+         pending_encrypted_secret = NULL, pending_recovery_hashes = NULL, disabled_at = ?
+       WHERE account_id = ?`,
+      [new Date().toISOString(), accountId]
+    );
+    await this.writeAuditEntry({
+      actorId: accountId,
+      entityType: 'MfaSetting',
+      entityId: accountId,
+      action: 'mfa.disabled'
+    });
+    return { enabled: false };
+  }
+
+  async verifyMfaCode(accountId, code) {
+    const row = await this.connection.get(
+      "SELECT encrypted_secret, recovery_hashes FROM mfa_settings WHERE account_id = ? AND state = 'enabled'",
+      [accountId]
+    );
+    if (!row) throw new ValidationError('MFA is not enabled.');
+    const validTotp = verifyTotp(decryptMfaSecret(row.encrypted_secret), code);
+    const recoveryHashes = JSON.parse(row.recovery_hashes);
+    const suppliedHash = hashRecoveryCode(code);
+    const recoveryIndex = recoveryHashes.indexOf(suppliedHash);
+    if (!validTotp && recoveryIndex < 0) throw new ValidationError('MFA code is invalid.');
+    if (recoveryIndex >= 0) {
+      recoveryHashes.splice(recoveryIndex, 1);
+      await this.connection.run(
+        'UPDATE mfa_settings SET recovery_hashes = ? WHERE account_id = ?',
+        [JSON.stringify(recoveryHashes), accountId]
+      );
+    }
+    return true;
+  }
+
+  async completeMfaChallenge(challengeToken, code) {
+    const challenge = verifyJwt(challengeToken);
+    if (!challenge || challenge.purpose !== 'mfa-challenge') {
+      throw new ValidationError('MFA challenge is invalid or expired.');
+    }
+    await this.verifyMfaCode(challenge.sub, code);
+    const account = this.accounts.get(challenge.sub);
+    if (!account) throw new ValidationError('MFA challenge account is invalid.');
+    await this.writeAuditEntry({
+      actorId: account.id,
+      organizationId: challenge.organizationId ?? null,
+      entityType: 'UserAccount',
+      entityId: account.id,
+      action: 'auth.mfa-verified'
+    });
+    return this.createAuthenticationSession(account, challenge.organizationId ?? null);
+  }
+
+  async listSessions(accountId) {
+    const rows = await this.connection.all(
+      `SELECT token_id, organization_id, expires_at, revoked_at, created_at
+       FROM refresh_tokens WHERE account_id = ? ORDER BY created_at DESC`,
+      [accountId]
+    );
+    return rows.map((row) => ({
+      id: row.token_id,
+      organizationId: row.organization_id,
+      expiresAt: row.expires_at,
+      revokedAt: row.revoked_at,
+      createdAt: row.created_at
+    }));
+  }
+
+  async revokeSession(accountId, tokenId) {
+    await this.connection.run(
+      'UPDATE refresh_tokens SET revoked_at = ? WHERE account_id = ? AND token_id = ? AND revoked_at IS NULL',
+      [new Date().toISOString(), accountId, tokenId]
+    );
+    return { revoked: true, sessionId: tokenId };
+  }
+
+  async requestBackup(input, actorId) {
+    const adapter = this.externalAdapters.backup;
+    const operation = await this.createOperationalRecord('backupOperations', {
+      organizationId: input.organizationId,
+      operationType: input.operationType ?? 'backup',
+      rpoHours: Number(input.rpoHours ?? 24),
+      rtoHours: Number(input.rtoHours ?? 8),
+      integrityState: 'not_tested',
+      operationState: adapter ? 'running' : 'pending_external'
+    }, actorId, 'backup.request');
+    if (!adapter) return operation;
+    try {
+      const result = await adapter.execute({ ...input, operationId: operation.id });
+      const before = cloneRecord(operation);
+      operation.operationState = 'completed';
+      operation.externalReference = result.externalReference ?? null;
+      operation.integrityState = result.integrityState ?? 'not_tested';
+      operation.touch();
+      await this.recordUpdate('backupOperations', before, operation, actorId, 'backup.complete');
+    } catch (error) {
+      const before = cloneRecord(operation);
+      operation.operationState = 'failed';
+      operation.failureReason = String(error.message);
+      operation.touch();
+      await this.recordUpdate('backupOperations', before, operation, actorId, 'backup.fail');
+    }
+    return operation;
+  }
+
+  async addSupportComment(ticketId, input, actorId) {
+    const ticket = this.supportTickets.get(ticketId);
+    if (!ticket) throw new ValidationError(`Unknown support ticket: ${ticketId}`);
+    const before = cloneRecord(ticket);
+    const comment = {
+      id: createPermanentId(),
+      authorId: actorId,
+      message: String(input.message ?? '').trim(),
+      createdAt: new Date().toISOString()
+    };
+    if (!comment.message) throw new ValidationError('message is required.');
+    ticket.comments.push(comment);
+    if (input.ticketState) ticket.ticketState = input.ticketState;
+    if (input.supportLevel) ticket.supportLevel = input.supportLevel;
+    ticket.history.push({
+      at: comment.createdAt,
+      actorId,
+      ticketState: ticket.ticketState,
+      supportLevel: ticket.supportLevel
+    });
+    ticket.touch();
+    await this.recordUpdate('supportTickets', before, ticket, actorId, 'support.comment');
+    return ticket;
+  }
+
+  checkEntitlement(organizationId, feature, { additionalUsers = 0, additionalStorageBytes = 0 } = {}) {
+    const subscription = [...this.tenantSubscriptions.values()]
+      .find((item) => item.organizationId === organizationId && item.subscriptionState === 'active');
+    const plan = subscription ? this.saasPlans.get(subscription.planId) : null;
+    if (!plan) return { allowed: false, reason: 'no_active_plan' };
+    if (!plan.features.includes(feature)) return { allowed: false, reason: 'feature_not_in_plan' };
+    const users = [...this.accounts.values()].filter((account) => account.organizationIds.includes(organizationId)).length;
+    const storage = [...this.documents.values()]
+      .filter((document) => document.organizationId === organizationId)
+      .reduce((sum, document) => sum + Number(document.sizeBytes ?? 0), 0);
+    if ((users + Number(additionalUsers)) > plan.userQuota) return { allowed: false, reason: 'user_quota_exceeded' };
+    if ((storage + Number(additionalStorageBytes)) > plan.storageQuotaBytes) return { allowed: false, reason: 'storage_quota_exceeded' };
+    return {
+      allowed: true,
+      planCode: plan.code,
+      usage: { users, storageBytes: storage },
+      quotas: { users: plan.userQuota, storageBytes: plan.storageQuotaBytes }
+    };
+  }
+
+  async requestAiAssistance(input, actorId) {
+    this.assertOrganizationContext(input.organizationId);
+    const requestedAction = String(input.requestedAction ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (HIGH_IMPACT_AI_ACTIONS.includes(requestedAction)) {
+      throw new ValidationError('AI assistance cannot make or recommend autonomous high-impact decisions.');
+    }
+    if (!SAFE_AI_ASSISTANCE_ACTIONS.includes(requestedAction)) {
+      throw new ValidationError('requestedAction is not an allowed assistive action.');
+    }
+    if (input.consent !== true) throw new ValidationError('Explicit consent is required for AI assistance.');
+    const prompt = String(input.prompt ?? '').trim();
+    if (!prompt) throw new ValidationError('prompt is required.');
+    const adapter = this.externalAdapters.ai;
+    const request = await this.createOperationalRecord('aiAssistanceRequests', {
+      ...input,
+      requestedAction,
+      prompt,
+      assistanceState: adapter ? 'processing' : 'pending_external',
+      providerConfigured: Boolean(adapter),
+      decisionAuthority: 'human'
+    }, actorId, 'ai-assistance.request');
+    if (!adapter) return request;
+    const response = await adapter.assist({
+      prompt: request.prompt,
+      context: input.context ?? {},
+      prohibitedActions: HIGH_IMPACT_AI_ACTIONS
+    });
+    const before = cloneRecord(request);
+    request.assistanceState = 'completed';
+    request.response = response.text;
+    request.touch();
+    await this.recordUpdate('aiAssistanceRequests', before, request, actorId, 'ai-assistance.complete');
+    return request;
+  }
+
+  async processOfflineMutations({ organizationId, mutations }, actorId) {
+    this.assertOrganizationContext(organizationId);
+    if (!Array.isArray(mutations)) throw new ValidationError('mutations must be an array.');
+    const results = [];
+    for (const mutation of mutations) {
+      const idempotencyKey = String(mutation.idempotencyKey ?? '');
+      if (!idempotencyKey) throw new ValidationError('Each offline mutation requires idempotencyKey.');
+      const previous = await this.connection.get(
+        'SELECT result_payload FROM offline_mutations WHERE organization_id = ? AND idempotency_key = ?',
+        [organizationId, idempotencyKey]
+      );
+      if (previous) {
+        results.push({ ...JSON.parse(previous.result_payload), replayed: true });
+        continue;
+      }
+      if (['grades', 'credentials', 'documents', 'disciplineRecords', 'payments'].includes(mutation.resource)) {
+        results.push({ idempotencyKey, state: 'requires_online_confirmation', resource: mutation.resource });
+        continue;
+      }
+      if (!['supportTickets', 'lmsProgress'].includes(mutation.resource)) {
+        results.push({ idempotencyKey, state: 'rejected', reason: 'offline_mutation_not_allowed' });
+        continue;
+      }
+      const record = this[mutation.resource]?.get(mutation.entityId);
+      if (mutation.resource === 'supportTickets' && !record) {
+        results.push({ idempotencyKey, state: 'rejected', reason: 'resource_not_found' });
+        continue;
+      }
+      if (record && record.organizationId !== organizationId) {
+        results.push({ idempotencyKey, state: 'rejected', reason: 'cross_tenant_resource' });
+        continue;
+      }
+      if (record && mutation.expectedUpdatedAt && String(record.updatedAt) !== String(mutation.expectedUpdatedAt)) {
+        results.push({ idempotencyKey, state: 'conflict', serverUpdatedAt: record.updatedAt });
+        continue;
+      }
+      let result;
+      if (mutation.resource === 'supportTickets' && mutation.action === 'comment') {
+        result = await this.addSupportComment(mutation.entityId, mutation.payload, actorId);
+      } else {
+        result = await this.createPlatformRecord('lmsProgress', {
+          ...mutation.payload,
+          organizationId
+        }, actorId);
+      }
+      const outcome = { idempotencyKey, state: 'applied', entityId: result.id };
+      await this.connection.run(
+        `INSERT INTO offline_mutations(organization_id, idempotency_key, actor_id, resource, entity_id, result_payload, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [organizationId, idempotencyKey, actorId, mutation.resource, result.id, JSON.stringify(outcome), new Date().toISOString()]
+      );
+      results.push(outcome);
+    }
+    return { organizationId, results, synchronizedAt: new Date().toISOString() };
+  }
+
+  async readinessCheck() {
+    try {
+      await this.connection.ping();
+      return { status: 'ready', database: this.connection.dialect };
+    } catch {
+      return { status: 'not_ready', database: 'unavailable' };
+    }
+  }
+
+  async getMetrics() {
+    const activeSessions = await this.connection.get(
+      'SELECT COUNT(*) AS total FROM refresh_tokens WHERE revoked_at IS NULL AND expires_at > ?',
+      [new Date().toISOString()]
+    );
+    return {
+      process_uptime_seconds: Math.floor(process.uptime()),
+      eduplateforme_active_sessions: Number(activeSessions?.total ?? 0),
+      eduplateforme_organizations: this.organizations.size,
+      eduplateforme_audit_events: Number((await this.connection.get('SELECT COUNT(*) AS total FROM audit_trail'))?.total ?? 0)
     };
   }
 

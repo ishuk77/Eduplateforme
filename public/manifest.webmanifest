@@ -3,7 +3,16 @@
   "short_name": "Eduplateforme",
   "description": "Gestion scolaire sécurisée et multi-établissement.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#eff4ff",
-  "theme_color": "#1d4ed8"
+  "theme_color": "#1d4ed8",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }
