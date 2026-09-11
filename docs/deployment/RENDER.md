@@ -16,7 +16,7 @@ Ce dépôt contient maintenant une base serveur Node.js ESM minimale, déployabl
 2. Sélectionner `ishuk77/Eduplateforme`
 3. Paramètres recommandés:
    - **Runtime**: Node
-   - **Build Command**: `npm install`
+   - **Build Command**: `npm ci`
    - **Start Command**: `npm start`
 
 ## 3) Variables d’environnement minimales
@@ -48,6 +48,6 @@ Après déploiement:
 
 ## 7) Dépannage basique
 
-- **Le service ne démarre pas**: vérifier `npm install` puis `npm start` en local.
+- **Le service ne démarre pas**: vérifier `npm ci` puis `npm start` en local.
 - **Erreur `Invalid PORT value`**: corriger la variable `PORT`.
 - **Port déjà utilisé en local**: changer `PORT` ou arrêter le processus occupant le port.

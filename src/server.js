@@ -5,29 +5,38 @@ import { createApp } from './app.js';
 export function getPortFromEnv(env = process.env) {
   const value = env.PORT;
 
-  if (!value) {
+  if (value === undefined) {
     return 3000;
   }
 
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`Invalid PORT value: ${value}`);
+  }
+
   const port = Number.parseInt(value, 10);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`Invalid PORT value: ${value}`);
   }
 
   return port;
 }
 
-export async function startServer({ port = getPortFromEnv(), host = '0.0.0.0', logger = console } = {}) {
-  const app = createApp();
-  const server = createServer(app);
+export async function startServer({ port = getPortFromEnv(), host = '0.0.0.0', logger = console, handler = createApp() } = {}) {
+  const server = createServer(handler);
 
   return await new Promise((resolve, reject) => {
-    server.once('error', (error) => {
+    const onStartupError = (error) => {
       logger.error('Server startup failed', { error: error.message, code: error.code, port, host });
       reject(error);
-    });
+    };
+
+    server.once('error', onStartupError);
 
     server.listen(port, host, () => {
+      server.removeListener('error', onStartupError);
+      server.on('error', (error) => {
+        logger.error('Server runtime error', { error: error.message, code: error.code, port, host });
+      });
       const address = server.address();
       const activePort = typeof address === 'object' && address ? address.port : port;
       logger.info(`Eduplateforme server listening on ${host}:${activePort}`);
