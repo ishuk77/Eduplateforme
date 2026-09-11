@@ -5,7 +5,7 @@ const server = createHttpServer();
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   server.listen(port, () => {
-    console.log(`Eduplateforme foundation listening on port ${port}`);
+    console.log(`Eduplateforme API listening on port ${port}`);
   });
 }
 

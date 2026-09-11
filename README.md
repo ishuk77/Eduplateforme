@@ -4,17 +4,25 @@ Eduplateforme is a compact, production-oriented foundation for an international,
 
 ## Current implementation status
 
-The repository now covers the initial seven-step continuation agreed for the project foundation:
+The repository now includes both:
 
-1. stronger project documentation and roadmap
-2. hardened identity boundaries
-3. expanded organization modelling with national/local identifier separation
-4. academic and enrollment primitives with explicit learner tracking
-5. document and credential records with version-aware history
-6. governance-oriented permission grants and ordered audit events
-7. coherent tests and minimal API/bootstrap metadata
-
-The implementation intentionally stays lightweight while keeping the main business invariants explicit.
+1. the original foundation (identity, organizations, academics, documents, audit, authorization)
+2. the missing functional modules required by the detailed specification:
+   - grading and gradebook
+   - attendance and absence tracking
+   - scheduling
+   - assignments and submissions
+   - report cards
+   - finance (fees, invoices, payments)
+   - notifications
+   - communications
+   - discipline
+   - calendar
+   - virtual schools and paid trainings
+   - certificates
+   - i18n and localization profile
+   - platform subscriptions
+   - parental consent and expanded audit history
 
 ## Core invariants
 
@@ -54,15 +62,17 @@ test/              Node:test coverage for key invariants
 - **Version corrections preserve prior records** by superseding documents and credentials instead of mutating them in place.
 - **Country rules are pluggable** through a registry that can validate future country-specific identifiers and constraints.
 
-## Minimal API surface
+## API surface
 
-The repository currently exposes lightweight HTTP stubs:
+The repository exposes HTTP endpoints for foundation and module workflows:
 
 - `GET /health`
 - `GET /meta/foundation`
 - `GET /meta/invariants`
+- `GET /meta/openapi`
+- module routes under `/organizations`, `/users`, `/accounts`, `/academics/*`, `/grading/*`, `/attendance/*`, `/scheduling/*`, `/assignments/*`, `/communications/*`, `/finance/*`, `/reports/*`, `/discipline/*`, `/notifications/*`, `/calendar/*`, `/virtual-schools*`, `/certificates`, `/subscriptions/platform`, `/i18n/profile`, `/security/parental-consents`, `/audit/events`
 
-These endpoints provide a stable entry point for future API work without prematurely committing to a full framework.
+The API keeps strict validation and returns consistent JSON errors.
 
 ## Getting started
 

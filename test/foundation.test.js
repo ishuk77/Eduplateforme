@@ -270,8 +270,9 @@ test('http server exposes foundation metadata endpoints', async () => {
   assert.deepEqual(await healthResponse.json(), { status: 'ok' });
   assert.equal(metaResponse.status, 200);
   const meta = await metaResponse.json();
-  assert.equal(meta.scope, 'extended-foundation');
+  assert.equal(meta.scope, 'full-specification-foundation');
   assert.equal(meta.summary.learners, 0);
+  assert.equal(meta.summary.grades, 0);
   assert.ok(meta.invariants.includes('learner_id != enrollment_id'));
   assert.equal(invariantsResponse.status, 200);
   assert.deepEqual((await invariantsResponse.json()).invariants, meta.invariants);
