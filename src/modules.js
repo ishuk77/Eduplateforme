@@ -111,11 +111,11 @@ export const modules = [
   {
     id: 'documents',
     path: '/documents',
-    label: 'Documents & Credentials',
-    eyebrow: 'Trusted records',
+    label: 'Documents et mobilité',
+    eyebrow: 'Dossiers de confiance',
     title: 'Documents & Credentials',
-    description: 'Preserve verifiable records, credentials, and their lineage across corrections and superseded versions.',
-    highlights: ['Credential issuance', 'Document history', 'Verification journeys'],
+    description: 'Préservez les dossiers, justificatifs vérifiables et transferts interinstitutionnels avec consentement et audit.',
+    highlights: ['Modèles immuables', 'Partage contrôlé', 'Transfert sécurisé', 'Vérification publique'],
   },
   {
     id: 'audit',
@@ -172,6 +172,15 @@ const moduleLookup = new Map([
     eyebrow: 'Registre public',
     title: 'Vérification institutionnelle',
     description: 'Consultez uniquement les données publiques de vérification.',
+    highlights: []
+  }],
+  ['/verify-credential', {
+    id: 'publicCredentialVerification',
+    path: '/verify-credential',
+    label: 'Vérifier un diplôme',
+    eyebrow: 'Registre public',
+    title: 'Vérification de diplôme',
+    description: 'Vérifiez le statut et l’intégrité à partir d’une référence opaque.',
     highlights: []
   }],
   ...modules.map((module) => [module.path, module]),

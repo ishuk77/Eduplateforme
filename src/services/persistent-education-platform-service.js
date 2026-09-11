@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { FoundationService } from '../application/foundation-service.js';
 import { EducationPlatformService } from './education-platform-service.js';
@@ -12,7 +12,15 @@ import { CalendarEvent } from '../domain/calendar/calendar.js';
 import { Certificate } from '../domain/certificates/certificates.js';
 import { DiscussionThread, ThreadMessage } from '../domain/communications/communications.js';
 import { DisciplineRecord } from '../domain/discipline/discipline.js';
-import { CredentialRecord, DocumentRecord } from '../domain/documents/documents.js';
+import {
+  CollaborationRequest,
+  ConsentRecord,
+  CredentialRecord,
+  DocumentRecord,
+  DocumentShare,
+  DocumentTemplate,
+  TransferRecord
+} from '../domain/documents/documents.js';
 import { FeeConfiguration, Invoice, Payment } from '../domain/finance/finance.js';
 import { GradeEntry, GradingSystem } from '../domain/grading/grading.js';
 import { LocalizationProfile } from '../domain/i18n/i18n.js';
@@ -72,6 +80,11 @@ const COLLECTIONS = {
   enrollments: { hydrate: (value) => new Enrollment(value) },
   documents: { hydrate: (value) => new DocumentRecord(value) },
   credentials: { hydrate: (value) => new CredentialRecord(value) },
+  documentTemplates: { hydrate: (value) => new DocumentTemplate(value) },
+  documentShares: { hydrate: (value) => new DocumentShare(value), sensitive: true },
+  consents: { hydrate: (value) => new ConsentRecord(value), sensitive: true },
+  collaborationRequests: { hydrate: (value) => new CollaborationRequest(value), sensitive: true },
+  transfers: { hydrate: (value) => new TransferRecord(value), sensitive: true },
   gradingSystems: { hydrate: (value) => new GradingSystem(value) },
   grades: { hydrate: (value) => new GradeEntry(value), repository: (connection) => new GradeRepository({ connection }), sensitive: true },
   attendance: { hydrate: (value) => new AttendanceRecord(value), repository: (connection) => new AttendanceRepository({ connection }) },
@@ -121,6 +134,11 @@ const RESOURCE_TO_COLLECTION = {
   enrollments: 'enrollments',
   documents: 'documents',
   credentials: 'credentials',
+  documentTemplates: 'documentTemplates',
+  documentShares: 'documentShares',
+  consents: 'consents',
+  collaborationRequests: 'collaborationRequests',
+  transfers: 'transfers',
   fees: 'fees',
   invoices: 'invoices',
   payments: 'payments',
@@ -172,6 +190,8 @@ const RESOURCE_ORGANIZATION_RESOLVER = {
   organizations: (record) => [record.id],
   people: (record) => [record.primaryOrganizationId ?? null],
   accounts: (record) => Array.isArray(record.organizationIds) ? record.organizationIds : [record.organizationId ?? null],
+  collaborationRequests: (record) => [record.sourceOrganizationId, record.destinationOrganizationId],
+  transfers: (record) => [record.sourceOrganizationId, record.destinationOrganizationId],
   default: (record) => [record.organizationId ?? null]
 };
 
@@ -187,6 +207,9 @@ const TENANT_ADMIN_PERMISSIONS = Object.freeze([
   'subscriptions.read', 'subscriptions.write',
   'documents.read', 'documents.write',
   'credentials.read', 'credentials.write',
+  'collaboration.read', 'collaboration.write',
+  'transfers.read', 'transfers.write',
+  'consents.read', 'consents.write',
   'assignments.read', 'assignments.write',
   'grading.read', 'grading.write',
   'attendance.read', 'attendance.write',
@@ -328,10 +351,22 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     return event;
   }
 
-  writeAuditEntry({ actorId = null, organizationId = null, entityType, entityId, action, before = null, after = null }) {
+  writeAuditEntry({
+    actorId = null,
+    organizationId = null,
+    entityType,
+    entityId,
+    action,
+    before = null,
+    after = null,
+    context = {},
+    reason = null
+  }) {
     return this.connection.run(
-      `INSERT INTO audit_trail(id, organization_id, actor_id, entity_type, entity_id, action, before_payload, after_payload, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO audit_trail(
+         id, organization_id, actor_id, entity_type, entity_id, action,
+         before_payload, after_payload, context_payload, reason, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         createPermanentId(),
         organizationId,
@@ -341,6 +376,8 @@ export class PersistentEducationPlatformService extends EducationPlatformService
         action,
         before ? JSON.stringify(before) : null,
         after ? JSON.stringify(after) : null,
+        JSON.stringify(context ?? {}),
+        reason,
         new Date().toISOString()
       ]
     );
@@ -360,7 +397,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     return record;
   }
 
-  recordUpdate(collectionKey, before, after, actorId, action) {
+  recordUpdate(collectionKey, before, after, actorId, action, { context = {}, reason = null } = {}) {
     this.persistRecord(collectionKey, after, { actorId, action });
     this.writeAuditEntry({
       actorId,
@@ -369,7 +406,9 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       entityId: after.id,
       action,
       before,
-      after: cloneRecord(after)
+      after: cloneRecord(after),
+      context,
+      reason
     });
     return after;
   }
@@ -511,16 +550,431 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     });
   }
 
+  transitionDocumentStatus(documentId, input, actorId = null) {
+    const document = this.documents.get(documentId);
+    if (!document) throw new ValidationError(`Unknown document: ${documentId}`);
+    const allowed = { active: ['expired', 'archived'], expired: ['archived'], archived: [], superseded: ['archived'] };
+    if (!(allowed[document.status] ?? []).includes(input.status)) {
+      throw new ValidationError(`Transition from ${document.status} to ${input.status} is not allowed.`);
+    }
+    if (!input.reason) throw new ValidationError('reason is required for a document transition.');
+    return this.transactional(() => {
+      const before = cloneRecord(document);
+      document.status = input.status;
+      if (input.status === 'archived') document.archivedAt = new Date();
+      document.touch();
+      this.recordEvent(`document.${input.status}`, document, actorId, { reason: input.reason });
+      return this.recordUpdate('documents', before, document, actorId, `document.${input.status}`, {
+        reason: input.reason
+      });
+    });
+  }
+
+  pseudonymizeDocument(documentId, input, actorId = null) {
+    const document = this.documents.get(documentId);
+    if (!document) throw new ValidationError(`Unknown document: ${documentId}`);
+    if (!input.reason) throw new ValidationError('reason is required for pseudonymization.');
+    const fields = Array.isArray(input.metadataFields) ? input.metadataFields : [];
+    return this.transactional(() => {
+      const before = cloneRecord(document);
+      const metadata = { ...document.metadata };
+      for (const field of fields) {
+        if (Object.prototype.hasOwnProperty.call(metadata, field)) metadata[field] = '[pseudonymized]';
+      }
+      document.metadata = metadata;
+      document.pseudonymizedAt = new Date().toISOString();
+      document.pseudonymizationReason = input.reason;
+      document.touch();
+      this.recordEvent('document.pseudonymized', document, actorId, {
+        reason: input.reason,
+        fields
+      });
+      return this.recordUpdate('documents', before, document, actorId, 'document.pseudonymize', {
+        context: { fields },
+        reason: input.reason
+      });
+    });
+  }
+
+  createDocumentTemplate(input, actorId = null) {
+    return this.createInstitutionalRecord(
+      'documentTemplates',
+      () => super.createDocumentTemplate(input, actorId),
+      actorId,
+      'document-template.create'
+    );
+  }
+
   issueCredential(input, actorId = null) {
-    return this.transactional(() => this.recordCreate('credentials', super.issueCredential(input, actorId), actorId, 'credential.create'));
+    return this.transactional(() => {
+      let templateSnapshot = input.templateSnapshot ?? {};
+      let templateVersion = input.templateVersion ?? null;
+      if (input.templateId) {
+        const template = this.assertTenantRecord(
+          this.documentTemplates,
+          input.templateId,
+          input.organizationId,
+          'document template'
+        );
+        templateSnapshot = template.snapshot();
+        templateVersion = template.versionNumber;
+      }
+      const credential = super.issueCredential({ ...input, templateSnapshot, templateVersion }, actorId);
+      return this.recordCreate('credentials', credential, actorId, 'credential.create');
+    });
   }
 
   issueCredentialRevision(previousCredentialId, input = {}, actorId = null) {
     return this.transactional(() => {
       const previous = cloneRecord(this.credentials.get(previousCredentialId));
-      const credential = super.issueCredentialRevision(previousCredentialId, input, actorId);
-      this.recordUpdate('credentials', previous, this.credentials.get(previousCredentialId), actorId, 'credential.supersede');
+      let templateSnapshot = input.templateSnapshot;
+      let templateVersion = input.templateVersion;
+      if (input.templateId) {
+        const template = this.assertTenantRecord(
+          this.documentTemplates,
+          input.templateId,
+          previous.organizationId,
+          'document template'
+        );
+        templateSnapshot = template.snapshot();
+        templateVersion = template.versionNumber;
+      }
+      const credential = super.issueCredentialRevision(previousCredentialId, {
+        ...input,
+        ...(templateSnapshot ? { templateSnapshot, templateVersion } : {})
+      }, actorId);
+      this.recordUpdate(
+        'credentials',
+        previous,
+        this.credentials.get(previousCredentialId),
+        actorId,
+        `credential.${this.credentials.get(previousCredentialId).status}`,
+        { reason: input.reason ?? input.replacementReason ?? null }
+      );
       return this.recordCreate('credentials', credential, actorId, 'credential.version');
+    });
+  }
+
+  transitionCredentialStatus(credentialId, input, actorId = null) {
+    return this.transactional(() => {
+      const before = cloneRecord(this.credentials.get(credentialId));
+      const credential = super.transitionCredentialStatus(credentialId, input, actorId);
+      return this.recordUpdate(
+        'credentials',
+        before,
+        credential,
+        actorId,
+        `credential.transition.${credential.status}`,
+        {
+          context: { authority: input.authority ?? null },
+          reason: input.reason
+        }
+      );
+    });
+  }
+
+  recordConsent(input, actorId = null) {
+    return this.createInstitutionalRecord(
+      'consents',
+      () => super.recordConsent(input, actorId),
+      actorId,
+      'consent.create'
+    );
+  }
+
+  withdrawConsent(consentId, input, actorId = null) {
+    const consent = this.consents.get(consentId);
+    if (!consent) throw new ValidationError(`Unknown consent: ${consentId}`);
+    if (consent.status !== 'active') throw new ValidationError('Consent is not active.');
+    if (!input.reason) throw new ValidationError('reason is required to withdraw consent.');
+    return this.transactional(() => {
+      const before = cloneRecord(consent);
+      consent.status = 'withdrawn';
+      consent.withdrawnAt = new Date();
+      consent.withdrawalReason = input.reason;
+      consent.touch(consent.withdrawnAt);
+      this.recordEvent('consent.withdrawn', consent, actorId, { reason: input.reason });
+      return this.recordUpdate('consents', before, consent, actorId, 'consent.withdraw', {
+        reason: input.reason
+      });
+    });
+  }
+
+  createDocumentShare(input, actorId = null) {
+    const token = randomBytes(32).toString('base64url');
+    return this.transactional(() => {
+      const share = super.createDocumentShare({
+        ...input,
+        tokenHash: hashToken(token)
+      }, actorId);
+      this.recordCreate('documentShares', share, actorId, 'document-share.create');
+      Object.defineProperty(share, 'accessToken', {
+        configurable: true,
+        enumerable: false,
+        value: token
+      });
+      return share;
+    });
+  }
+
+  revokeDocumentShare(shareId, input, actorId = null) {
+    const share = this.documentShares.get(shareId);
+    if (!share) throw new ValidationError(`Unknown document share: ${shareId}`);
+    if (!input.reason) throw new ValidationError('reason is required to revoke a share.');
+    return this.transactional(() => {
+      const before = cloneRecord(share);
+      share.status = input.status === 'refused' ? 'refused' : 'revoked';
+      share.revokedAt = new Date();
+      share.touch(share.revokedAt);
+      this.recordEvent(`document-share.${share.status}`, share, actorId, { reason: input.reason });
+      return this.recordUpdate('documentShares', before, share, actorId, `document-share.${share.status}`, {
+        reason: input.reason
+      });
+    });
+  }
+
+  async accessDocumentShare(token, context = {}) {
+    const share = Array.from(this.documentShares.values())
+      .find((candidate) => candidate.tokenHash === hashToken(token));
+    if (!share || share.status !== 'active' || share.revokedAt || Date.parse(share.expiresAt) <= Date.now()) {
+      throw new ValidationError('Share token is invalid, refused, revoked, or expired.');
+    }
+    const document = this.documents.get(share.documentId);
+    if (!document || ['archived', 'expired'].includes(document.status)) {
+      throw new ValidationError('Shared document is no longer available.');
+    }
+    const allowlist = new Set(['id', 'type', 'title', 'documentNumber', 'issuedAt', 'expiresAt', 'fileHash', 'hashAlgorithm']);
+    const result = Object.fromEntries(
+      share.dataScope.filter((field) => allowlist.has(field)).map((field) => [field, document[field]])
+    );
+    await this.writeAuditEntry({
+      actorId: 'public-share',
+      organizationId: share.organizationId,
+      entityType: 'DocumentShare',
+      entityId: share.id,
+      action: 'document-share.access',
+      after: { fields: Object.keys(result) },
+      context
+    });
+    return result;
+  }
+
+  createCollaborationRequest(input, actorId = null) {
+    return this.createInstitutionalRecord(
+      'collaborationRequests',
+      () => super.createCollaborationRequest(input, actorId),
+      actorId,
+      'collaboration.create'
+    );
+  }
+
+  decideCollaborationRequest(requestId, input, actorId = null) {
+    const collaboration = this.collaborationRequests.get(requestId);
+    if (!collaboration) throw new ValidationError(`Unknown collaboration request: ${requestId}`);
+    if (collaboration.status !== 'pending' || Date.parse(collaboration.expiresAt) <= Date.now()) {
+      throw new ValidationError('Collaboration request is no longer pending.');
+    }
+    if (!['accepted', 'refused', 'partial'].includes(input.status)) {
+      throw new ValidationError('Collaboration decision must be accepted, refused, or partial.');
+    }
+    if (!input.reason) throw new ValidationError('reason is required for a collaboration decision.');
+    const acceptedDataScope = input.status === 'partial' ? input.acceptedDataScope ?? [] : collaboration.dataScope;
+    if (!acceptedDataScope.every((field) => collaboration.dataScope.includes(field))) {
+      throw new ValidationError('acceptedDataScope exceeds the requested scope.');
+    }
+    return this.transactional(() => {
+      const before = cloneRecord(collaboration);
+      collaboration.status = input.status;
+      collaboration.acceptedDataScope = input.status === 'refused' ? [] : acceptedDataScope;
+      collaboration.decisionReason = input.reason;
+      collaboration.decidedAt = new Date();
+      collaboration.touch(collaboration.decidedAt);
+      this.recordEvent(`collaboration.${input.status}`, collaboration, actorId, { reason: input.reason });
+      return this.recordUpdate(
+        'collaborationRequests',
+        before,
+        collaboration,
+        actorId,
+        `collaboration.${input.status}`,
+        { reason: input.reason }
+      );
+    });
+  }
+
+  createTransfer(input, actorId = null) {
+    return this.createInstitutionalRecord(
+      'transfers',
+      () => super.createTransfer(input, actorId),
+      actorId,
+      'transfer.create'
+    );
+  }
+
+  transitionTransfer(transferId, input, actorId = null) {
+    const transfer = this.transfers.get(transferId);
+    if (!transfer) throw new ValidationError(`Unknown transfer: ${transferId}`);
+    const allowed = {
+      draft: ['requested', 'cancelled'],
+      requested: ['validated', 'refused', 'cancelled', 'expired'],
+      validated: ['sent', 'refused', 'cancelled'],
+      sent: ['acknowledged', 'refused'],
+      acknowledged: [],
+      refused: [],
+      cancelled: [],
+      expired: []
+    };
+    if (!(allowed[transfer.status] ?? []).includes(input.status)) {
+      throw new ValidationError(`Transition from ${transfer.status} to ${input.status} is not allowed.`);
+    }
+    if (!input.reason) throw new ValidationError('reason is required for a transfer transition.');
+    let enrollmentContext = null;
+    if (input.status === 'acknowledged' && input.createEnrollment === true) {
+      const sourceLearner = this.learners.get(transfer.learnerId);
+      const sourcePerson = this.people.get(sourceLearner.personId);
+      if (!transfer.requestedData.includes('identity') || !transfer.requestedData.includes('enrollment')) {
+        throw new ValidationError('Enrollment creation requires identity and enrollment in requestedData.');
+      }
+      if (transfer.authorizationBasis === 'consent') {
+        const consent = this.consents.get(transfer.consentId);
+        if (!consent || consent.status !== 'active' || consent.withdrawnAt
+          || Date.parse(consent.expiresAt) <= Date.now()
+          || consent.recipientOrganizationId !== transfer.destinationOrganizationId
+          || consent.subjectPersonId !== sourcePerson.id
+          || !transfer.requestedData.every((field) => consent.dataScope.includes(field))) {
+          throw new ValidationError('Transfer consent is no longer valid for enrollment creation.');
+        }
+      }
+      const destinationClassId = input.destinationClassId ?? transfer.destinationClassId;
+      const destinationAcademicYearId = input.destinationAcademicYearId ?? transfer.destinationAcademicYearId;
+      this.assertTenantRecord(this.classes, destinationClassId, transfer.destinationOrganizationId, 'destination class');
+      this.assertTenantRecord(
+        this.academicYears,
+        destinationAcademicYearId,
+        transfer.destinationOrganizationId,
+        'destination academic year'
+      );
+      enrollmentContext = { sourceLearner, sourcePerson, destinationClassId, destinationAcademicYearId };
+    }
+    return this.transactional(async () => {
+      const before = cloneRecord(transfer);
+      const changedAt = new Date();
+      transfer.history.push({
+        from: transfer.status,
+        to: input.status,
+        reason: input.reason,
+        actorId,
+        changedAt: changedAt.toISOString()
+      });
+      transfer.status = input.status;
+      if (input.status === 'validated') transfer.validatedAt = changedAt;
+      if (input.status === 'acknowledged') transfer.acknowledgedAt = changedAt;
+      transfer.touch(changedAt);
+      this.recordEvent(`transfer.${input.status}`, transfer, actorId, { reason: input.reason });
+
+      if (enrollmentContext) {
+        const { sourceLearner, sourcePerson, destinationClassId, destinationAcademicYearId } = enrollmentContext;
+        const destinationPerson = FoundationService.prototype.registerPerson.call(this, {
+          givenName: sourcePerson.givenName,
+          familyName: sourcePerson.familyName,
+          preferredName: transfer.requestedData.includes('identity') ? sourcePerson.preferredName : null,
+          birthDate: transfer.requestedData.includes('birthDate') ? sourcePerson.birthDate : null,
+          primaryOrganizationId: transfer.destinationOrganizationId
+        }, actorId);
+        this.recordCreate('people', destinationPerson, actorId, 'person.transfer-create');
+        const destinationLearner = FoundationService.prototype.createLearner.call(this, {
+          organizationId: transfer.destinationOrganizationId,
+          personId: destinationPerson.id,
+          learnerNumber: input.destinationLearnerNumber,
+          sourceLearnerId: sourceLearner.id,
+          sourceOrganizationId: transfer.sourceOrganizationId
+        }, actorId);
+        destinationLearner.sourceLearnerId = sourceLearner.id;
+        destinationLearner.sourceOrganizationId = transfer.sourceOrganizationId;
+        this.recordCreate('learners', destinationLearner, actorId, 'learner.transfer-create');
+        const enrollment = FoundationService.prototype.createEnrollment.call(this, {
+          organizationId: transfer.destinationOrganizationId,
+          personId: destinationPerson.id,
+          learnerId: destinationLearner.id,
+          classId: destinationClassId,
+          academicYearId: destinationAcademicYearId,
+          enrollmentReference: input.enrollmentReference
+        }, actorId);
+        this.recordCreate('enrollments', enrollment, actorId, 'enrollment.transfer-create');
+        transfer.destinationEnrollmentId = enrollment.id;
+      }
+
+      return this.recordUpdate('transfers', before, transfer, actorId, `transfer.${input.status}`, {
+        context: {
+          sourceOrganizationId: transfer.sourceOrganizationId,
+          destinationOrganizationId: transfer.destinationOrganizationId
+        },
+        reason: input.reason
+      });
+    });
+  }
+
+  async verifyPublicCredential(publicReference, context = {}) {
+    const credential = Array.from(this.credentials.values())
+      .find((candidate) =>
+        candidate.publicReference === publicReference
+        && candidate.publicVerificationEnabled !== false
+      );
+    if (!credential) return null;
+    const document = this.documents.get(credential.documentId);
+    const issuer = this.organizations.get(credential.issuerOrganizationId);
+    const holder = this.people.get(credential.holderId);
+    const now = Date.now();
+    const effectiveStatus = credential.expiresAt && Date.parse(credential.expiresAt) <= now
+      && !['revoked', 'replaced', 'void'].includes(credential.status)
+      ? 'expired'
+      : credential.status;
+    const result = {
+      reference: credential.publicReference,
+      credentialNumber: credential.credentialNumber,
+      credentialType: credential.credentialType,
+      qualification: credential.qualification,
+      status: effectiveStatus,
+      integrity: Boolean(document && credential.fileHash === document.fileHash),
+      issuedAt: credential.awardedAt,
+      validFrom: credential.validFrom,
+      expiresAt: credential.expiresAt,
+      replacementReference: credential.replacedByCredentialId
+        ? this.credentials.get(credential.replacedByCredentialId)?.publicReference ?? null
+        : null,
+      issuer: issuer ? { legalName: issuer.legalName, countryCode: issuer.countryCode } : null,
+      holder: holder ? { givenName: holder.givenName, familyName: holder.familyName } : null
+    };
+    await this.writeAuditEntry({
+      actorId: 'public-verifier',
+      organizationId: credential.organizationId,
+      entityType: 'CredentialRecord',
+      entityId: credential.id,
+      action: 'credential.public-verify',
+      after: { status: result.status, integrity: result.integrity },
+      context
+    });
+    return result;
+  }
+
+  recordSensitiveAccess({ actorId, organizationId, resource, entityId = null, context = {} }) {
+    const sensitiveResources = new Set([
+      'documents',
+      'credentials',
+      'documentShares',
+      'consents',
+      'collaborationRequests',
+      'transfers',
+      'guardianProfiles',
+      'discipline'
+    ]);
+    if (!sensitiveResources.has(resource)) return null;
+    return this.writeAuditEntry({
+      actorId,
+      organizationId,
+      entityType: resource,
+      entityId: entityId ?? '*',
+      action: `${resource}.access`,
+      context
     });
   }
 
@@ -1237,7 +1691,16 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     )) {
       throw new ValidationError('Account organization memberships cannot be changed through generic updates.');
     }
-    if (['operatingAuthorizations', 'accreditations', 'institutionVerifications'].includes(resource)
+    if ([
+      'operatingAuthorizations',
+      'accreditations',
+      'institutionVerifications',
+      'credentials',
+      'consents',
+      'documentShares',
+      'collaborationRequests',
+      'transfers'
+    ].includes(resource)
       && (Object.prototype.hasOwnProperty.call(patch, 'status') || Object.prototype.hasOwnProperty.call(patch, 'history'))) {
       throw new ValidationError('Status and history must be changed through the dedicated transition workflow.');
     }
@@ -1267,6 +1730,19 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       'publicCode',
       'teacherPersonId',
       'virtualSchoolId'
+      ,
+      'lineageId',
+      'supersedesDocumentId',
+      'supersedesCredentialId',
+      'fileHash',
+      'hashAlgorithm',
+      'verificationTokenHash',
+      'publicReference',
+      'templateSnapshot',
+      'sourceOrganizationId',
+      'destinationOrganizationId',
+      'consentId',
+      'tokenHash'
     ]);
     for (const field of immutableReferenceFields) {
       if (Object.prototype.hasOwnProperty.call(patch, field) && patch[field] !== entity[field]) {
@@ -1300,7 +1776,14 @@ export class PersistentEducationPlatformService extends EducationPlatformService
         'academicLevels',
         'subjects',
         'courses',
-        'contextualPermissionRules'
+        'contextualPermissionRules',
+        'documentTemplates',
+        'documents',
+        'credentials',
+        'documentShares',
+        'consents',
+        'collaborationRequests',
+        'transfers'
       ]);
       const candidate = { ...entity };
       for (const [key, value] of Object.entries(patch)) {
@@ -1359,7 +1842,8 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       return Promise.all([
         this.connection.get(`SELECT COUNT(*) AS total FROM audit_trail ${whereClause}`, params),
         this.connection.all(
-          `SELECT id, organization_id, actor_id, entity_type, entity_id, action, before_payload, after_payload, created_at
+          `SELECT id, organization_id, actor_id, entity_type, entity_id, action,
+                  before_payload, after_payload, context_payload, reason, created_at
            FROM audit_trail ${whereClause}
            ORDER BY created_at DESC
            LIMIT ? OFFSET ?`,
@@ -1370,7 +1854,8 @@ export class PersistentEducationPlatformService extends EducationPlatformService
 
     const totalRow = this.connection.get(`SELECT COUNT(*) AS total FROM audit_trail ${whereClause}`, params);
     const rows = this.connection.all(
-      `SELECT id, organization_id, actor_id, entity_type, entity_id, action, before_payload, after_payload, created_at
+      `SELECT id, organization_id, actor_id, entity_type, entity_id, action,
+              before_payload, after_payload, context_payload, reason, created_at
        FROM audit_trail ${whereClause}
        ORDER BY created_at DESC
        LIMIT ? OFFSET ?`,
@@ -1391,6 +1876,8 @@ export class PersistentEducationPlatformService extends EducationPlatformService
         action: row.action,
         before: row.before_payload ? JSON.parse(row.before_payload) : null,
         after: row.after_payload ? JSON.parse(row.after_payload) : null,
+        context: row.context_payload ? JSON.parse(row.context_payload) : {},
+        reason: row.reason ?? null,
         timestamp: row.created_at
       })),
       page: {

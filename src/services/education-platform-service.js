@@ -29,6 +29,13 @@ import {
   ProfessionalProfile,
   Subject
 } from '../domain/institutional/institutional.js';
+import {
+  CollaborationRequest,
+  ConsentRecord,
+  DocumentShare,
+  DocumentTemplate,
+  TransferRecord
+} from '../domain/documents/documents.js';
 import { ValidationError, createPermanentId } from '../shared/entity.js';
 
 function paginate(items, { limit = 25, offset = 0 } = {}) {
@@ -82,6 +89,11 @@ export class EducationPlatformService extends FoundationService {
     this.courses = new Map();
     this.learnerLifecycleEvents = new Map();
     this.contextualPermissionRules = new Map();
+    this.documentTemplates = new Map();
+    this.documentShares = new Map();
+    this.consents = new Map();
+    this.collaborationRequests = new Map();
+    this.transfers = new Map();
   }
 
   assertOrganizationContext(organizationId) {
@@ -255,6 +267,120 @@ export class EducationPlatformService extends FoundationService {
     this.contextualPermissionRules.set(rule.id, rule);
     this.recordEvent('contextual-permission-rule.created', rule, actorId);
     return rule;
+  }
+
+  createDocumentTemplate(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const template = new DocumentTemplate(input);
+    this.documentTemplates.set(template.id, template);
+    this.recordEvent('document-template.created', template, actorId);
+    return template;
+  }
+
+  recordConsent(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    this.assertExists(this.people, input.subjectPersonId, 'subject person');
+    this.assertExists(this.people, input.authorityPersonId, 'authority person');
+    this.assertOrganizationContext(input.recipientOrganizationId);
+    for (const personId of [input.subjectPersonId, input.authorityPersonId]) {
+      const person = this.people.get(personId);
+      if (person.primaryOrganizationId && person.primaryOrganizationId !== input.organizationId) {
+        throw new ValidationError('Consent subjects and authorities must belong to the source organization.');
+      }
+    }
+    if (Date.parse(input.expiresAt) <= Date.now()) {
+      throw new ValidationError('Consent expiresAt must be in the future.');
+    }
+    const consent = new ConsentRecord(input);
+    this.consents.set(consent.id, consent);
+    this.recordEvent('consent.granted', consent, actorId, {
+      purpose: consent.purpose,
+      dataScope: consent.dataScope,
+      legalBasis: consent.legalBasis
+    });
+    return consent;
+  }
+
+  createDocumentShare(input, actorId = null) {
+    this.assertTenantRecord(this.documents, input.documentId, input.organizationId, 'document');
+    const publicFields = new Set([
+      'id', 'type', 'title', 'documentNumber', 'issuedAt', 'expiresAt', 'fileHash', 'hashAlgorithm'
+    ]);
+    if (!Array.isArray(input.dataScope) || input.dataScope.length === 0
+      || !input.dataScope.every((field) => publicFields.has(field))) {
+      throw new ValidationError('dataScope must contain only approved public document fields.');
+    }
+    if (Date.parse(input.expiresAt) <= Date.now()) {
+      throw new ValidationError('Share expiresAt must be in the future.');
+    }
+    if (input.consentId) {
+      const consent = this.assertTenantRecord(this.consents, input.consentId, input.organizationId, 'consent');
+      if (consent.status !== 'active' || consent.withdrawnAt || Date.parse(consent.expiresAt) <= Date.now()) {
+        throw new ValidationError('Consent is not active.');
+      }
+      if (!input.dataScope.every((field) => consent.dataScope.includes(field))) {
+        throw new ValidationError('Share dataScope exceeds consent.');
+      }
+    }
+    const share = new DocumentShare(input);
+    this.documentShares.set(share.id, share);
+    this.recordEvent('document-share.created', share, actorId, {
+      purpose: share.purpose,
+      dataScope: share.dataScope
+    });
+    return share;
+  }
+
+  createCollaborationRequest(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    this.assertOrganizationContext(input.destinationOrganizationId);
+    if (input.sourceOrganizationId && input.sourceOrganizationId !== input.organizationId) {
+      throw new ValidationError('sourceOrganizationId must match organizationId.');
+    }
+    if (Date.parse(input.expiresAt) <= Date.now()) {
+      throw new ValidationError('Collaboration expiresAt must be in the future.');
+    }
+    const collaboration = new CollaborationRequest(input);
+    this.collaborationRequests.set(collaboration.id, collaboration);
+    this.recordEvent('collaboration.requested', collaboration, actorId, {
+      purpose: collaboration.purpose,
+      dataScope: collaboration.dataScope
+    });
+    return collaboration;
+  }
+
+  createTransfer(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    this.assertOrganizationContext(input.destinationOrganizationId);
+    if (input.sourceOrganizationId && input.sourceOrganizationId !== input.organizationId) {
+      throw new ValidationError('sourceOrganizationId must match organizationId.');
+    }
+    this.assertTenantRecord(this.learners, input.learnerId, input.organizationId, 'learner');
+    if (input.authorizationBasis === 'consent') {
+      const consent = this.assertTenantRecord(this.consents, input.consentId, input.organizationId, 'consent');
+      if (consent.status !== 'active' || consent.withdrawnAt || Date.parse(consent.expiresAt) <= Date.now()) {
+        throw new ValidationError('An active consent is required for this transfer.');
+      }
+      if (consent.recipientOrganizationId !== input.destinationOrganizationId) {
+        throw new ValidationError('Consent recipient must match transfer destination.');
+      }
+      if (!input.requestedData.every((field) => consent.dataScope.includes(field))) {
+        throw new ValidationError('Transfer requestedData exceeds consent.');
+      }
+      if (consent.subjectPersonId !== this.learners.get(input.learnerId).personId) {
+        throw new ValidationError('Consent subject must match the transferred learner.');
+      }
+    }
+    if (!input.encryption?.algorithm && !String(input.securePayloadReference).startsWith('vault://')) {
+      throw new ValidationError('Transfer requires encryption metadata or a vault reference.');
+    }
+    const transfer = new TransferRecord(input);
+    this.transfers.set(transfer.id, transfer);
+    this.recordEvent('transfer.created', transfer, actorId, {
+      authorizationBasis: transfer.authorizationBasis,
+      requestedData: transfer.requestedData
+    });
+    return transfer;
   }
 
   configureGradingSystem(input, actorId = null) {
