@@ -28,6 +28,9 @@ The repository now includes both:
    - création guidée de la première école avec rôle administrateur
    - tableau de bord alimenté par les API
    - listes et formulaires pour tous les modules de navigation
+   - écrans opérationnels pour devoirs/soumissions/notation, notes et
+     moyennes, assiduité, emplois du temps, finances, notifications,
+     académies virtuelles, certificats, localisation et consentements parentaux
 
 ## Créer le premier compte et tester
 
@@ -62,8 +65,9 @@ affichées par l’interface; aucune donnée ni réussite n’est simulée.
 - Expand fine-grained field-level authorization and audit review workflows
 - Les documents stockent une référence vers un stockage externe; aucun upload
   binaire n’est inclus dans ce MVP.
-- Les notifications, finances, devoirs, notes et présences restent disponibles
-  par API mais ne font pas partie des modules de navigation demandés ici.
+- L’envoi externe (courriel, SMS, push), le stockage du contenu des devoirs et
+  le rendu PDF des certificats restent délégués à des fournisseurs externes;
+  l’interface n’affiche un envoi que lorsque l’API l’a réellement marqué.
 
 ## Project structure
 
@@ -104,3 +108,7 @@ check. See [`docs/deployment/RENDER.md`](docs/deployment/RENDER.md).
 - Academics (`years`, `programs`, `classes`, `enrollments`): create + list/read/update/archive/history
 - Documents and credentials: create + list/read/update/archive/history + version/revision routes
 - Audit/meta: `/audit/trail`, `/audit/events`, `/meta/foundation`, `/meta/invariants`, `/meta/openapi`
+- Opérations: devoirs et soumissions, barèmes/notes, présence, planning,
+  frais/factures/paiements, notifications, académie virtuelle, certificats,
+  localisation et consentements parentaux (CRUD tenant-scoped et historique
+  lorsque la ressource est archivable)

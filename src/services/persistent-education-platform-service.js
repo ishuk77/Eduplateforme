@@ -99,8 +99,17 @@ const RESOURCE_TO_COLLECTION = {
   calendarEvents: 'calendarEvents',
   platformSubscriptions: 'platformSubscriptions',
   grades: 'grades',
+  gradingSystems: 'gradingSystems',
   attendance: 'attendance',
   assignments: 'assignments',
+  assignmentSubmissions: 'assignmentSubmissions',
+  scheduleEntries: 'scheduleEntries',
+  notifications: 'notifications',
+  virtualSchools: 'virtualSchools',
+  paidTrainings: 'paidTrainings',
+  certificates: 'certificates',
+  parentalConsents: 'parentalConsents',
+  localizationProfiles: 'localizationProfiles',
   reports: 'reportCards',
   communicationsThreads: 'threads',
   communicationsMessages: 'messages',
@@ -131,6 +140,16 @@ const TENANT_ADMIN_PERMISSIONS = Object.freeze([
   'subscriptions.read', 'subscriptions.write',
   'documents.read', 'documents.write',
   'credentials.read', 'credentials.write',
+  'assignments.read', 'assignments.write',
+  'grading.read', 'grading.write',
+  'attendance.read', 'attendance.write',
+  'scheduling.read', 'scheduling.write',
+  'finance.read', 'finance.write',
+  'notifications.read', 'notifications.write',
+  'virtual-schools.read', 'virtual-schools.write',
+  'certificates.read', 'certificates.write',
+  'i18n.read', 'i18n.write',
+  'security.read', 'security.write',
   'audit.read'
 ]);
 
@@ -506,7 +525,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
   upsertLocalizationProfile(input, actorId = null) {
     return this.transactional(() => {
       const previous = this.localizationProfiles.get(input.organizationId);
-      const profile = super.upsertLocalizationProfile(input, actorId);
+      const profile = super.upsertLocalizationProfile({ ...input, id: previous?.id ?? input.id }, actorId);
       this.persistRecord('localizationProfiles', profile, { actorId, action: previous ? 'localization.update' : 'localization.create' });
       this.writeAuditEntry({
         actorId,
@@ -871,6 +890,9 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       for (const code of role?.permissions ?? []) {
         permissionCodes.add(code);
       }
+      if (role?.code === 'tenant-admin') {
+        for (const code of TENANT_ADMIN_PERMISSIONS) permissionCodes.add(code);
+      }
     }
 
     for (const grant of this.permissionGrants.values()) {
@@ -981,9 +1003,23 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     )) {
       throw new ValidationError('Account organization memberships cannot be changed through generic updates.');
     }
+    const entity = collection.get(id);
+    const immutableReferenceFields = new Set([
+      'assignmentId',
+      'classId',
+      'feeConfigurationId',
+      'invoiceId',
+      'parentPersonId',
+      'teacherPersonId',
+      'virtualSchoolId'
+    ]);
+    for (const field of immutableReferenceFields) {
+      if (Object.prototype.hasOwnProperty.call(patch, field) && patch[field] !== entity[field]) {
+        throw new ValidationError(`${field} cannot be changed after creation.`);
+      }
+    }
 
     return this.transactional(() => {
-      const entity = collection.get(id);
       const before = cloneRecord(entity);
       const immutableFields = new Set([
         'id',

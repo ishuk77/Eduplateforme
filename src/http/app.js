@@ -45,7 +45,10 @@ function getCorsOrigin(request) {
     return null;
   }
   const allowedOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
-  if (requestOrigin !== allowedOrigin) {
+  const requestUrl = new URL(request.url);
+  const requestHost = request.headers.get('host');
+  const sameOrigin = requestHost ? `${requestUrl.protocol}//${requestHost}` : requestUrl.origin;
+  if (requestOrigin !== allowedOrigin && requestOrigin !== sameOrigin) {
     throw new ApiError('CORS_FORBIDDEN', 'Origin is not allowed.', 403);
   }
   return requestOrigin;
@@ -114,6 +117,22 @@ function createOpenApiDescription() {
       '/grading/grades': { get: { summary: 'List grades' }, post: { summary: 'Create grade' } },
       '/attendance/records': { get: { summary: 'List attendance records' }, post: { summary: 'Create attendance record' } },
       '/assignments': { get: { summary: 'List assignments' }, post: { summary: 'Create assignment' } },
+      '/assignments/submissions': { get: { summary: 'List submissions' }, post: { summary: 'Submit assignment' } },
+      '/assignments/submissions/grade': { post: { summary: 'Grade a submission' } },
+      '/grading/systems': { get: { summary: 'List grading systems' }, post: { summary: 'Create grading system' } },
+      '/grading/average': { get: { summary: 'Calculate learner average' } },
+      '/attendance/rate': { get: { summary: 'Calculate learner attendance rate' } },
+      '/scheduling/entries': { get: { summary: 'List schedule entries' }, post: { summary: 'Create schedule entry' } },
+      '/finance/fees': { get: { summary: 'List fee types' }, post: { summary: 'Create fee type' } },
+      '/finance/invoices': { get: { summary: 'List invoices and balances' }, post: { summary: 'Create invoice' } },
+      '/finance/payments': { get: { summary: 'List payments' }, post: { summary: 'Record payment' } },
+      '/notifications': { get: { summary: 'List notifications' }, post: { summary: 'Create notification' } },
+      '/notifications/sent': { post: { summary: 'Mark notification sent' } },
+      '/virtual-schools': { get: { summary: 'List virtual schools' }, post: { summary: 'Create virtual school' } },
+      '/virtual-schools/trainings': { get: { summary: 'List trainings' }, post: { summary: 'Create training' } },
+      '/certificates': { get: { summary: 'List certificates' }, post: { summary: 'Issue certificate' } },
+      '/i18n/profile': { get: { summary: 'Get localization profile' }, post: { summary: 'Upsert localization profile' } },
+      '/security/parental-consents': { get: { summary: 'List parental consents' }, post: { summary: 'Record parental consent' } },
       '/reports/cards': { get: { summary: 'List report cards' }, post: { summary: 'Generate report card' } },
       '/communications/threads': { get: { summary: 'List threads' }, post: { summary: 'Create thread' } },
       '/discipline/records': { get: { summary: 'List discipline records' }, post: { summary: 'Create discipline record' } },

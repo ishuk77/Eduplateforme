@@ -12,6 +12,16 @@ const applicationRoutes = [
   ['/organizations', 'Organizations'],
   ['/people', 'People & Identity'],
   ['/academics', 'Academics & Enrollments'],
+  ['/assignments', 'Devoirs et soumissions'],
+  ['/grading', 'Notes'],
+  ['/attendance', 'Présences'],
+  ['/scheduling', 'Emplois du temps'],
+  ['/finance', 'Finances'],
+  ['/notifications', 'Notifications'],
+  ['/virtual-schools', 'Académie virtuelle'],
+  ['/certificates', 'Certificats'],
+  ['/i18n', 'Localisation'],
+  ['/security/parental-consents', 'Consentements parentaux'],
   ['/documents', 'Documents & Credentials'],
   ['/audit', 'Audit & Governance'],
 ];
@@ -66,13 +76,48 @@ test('serves the static shell assets', async () => {
     ];
 
     for (const [route, contentType, snippet] of assetChecks) {
-      const response = await fetch(`${baseUrl}${route}`);
+      const response = await fetch(`${baseUrl}${route}`, {
+        headers: { origin: baseUrl },
+      });
       const body = await response.text();
 
       assert.equal(response.status, 200);
       assert.match(response.headers.get('content-type') ?? '', contentType);
       assert.match(body, snippet);
+      assert.equal(response.headers.get('access-control-allow-origin'), baseUrl);
     }
+
+    const forbiddenResponse = await fetch(`${baseUrl}/app.js`, {
+      headers: { origin: 'https://malicious.example' },
+    });
+    assert.equal(forbiddenResponse.status, 403);
+  });
+});
+
+test('frontend exposes real forms, status handling, and operational actions', async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/app.js`);
+    const javascript = await response.text();
+    for (const endpoint of [
+      '/assignments/submissions', '/grading/systems', '/attendance/records',
+      '/scheduling/entries', '/finance/payments', '/notifications/sent',
+      '/virtual-schools/trainings', '/certificates', '/i18n/profiles',
+      '/security/parental-consents'
+    ]) {
+      assert.match(javascript, new RegExp(endpoint.replaceAll('/', '\\/')));
+    }
+    assert.match(javascript, /Chargement des données/);
+    assert.match(javascript, /Aucune donnée/);
+    assert.match(javascript, /notification\(error\.message, 'error'\)/);
+    assert.match(javascript, /inline-action-form/);
+    assert.ok(
+      javascript.indexOf("document.querySelectorAll('.inline-action-form')") <
+        javascript.indexOf("document.querySelectorAll('[data-action=\"edit\"]')")
+    );
+    assert.ok(
+      javascript.indexOf("document.querySelectorAll('[data-action=\"history\"]')") >
+        javascript.indexOf("document.querySelectorAll('[data-action=\"edit\"]')")
+    );
   });
 });
 

@@ -19,14 +19,17 @@ export class Assignment extends Entity {
 }
 
 export class AssignmentSubmission extends Entity {
-  constructor({ id, organizationId, assignmentId, learnerId, submittedAt = new Date().toISOString(), contentReference }) {
-    super({ id });
+  constructor({
+    id, organizationId, assignmentId, learnerId, submittedAt = new Date().toISOString(),
+    contentReference, score = null, maxScore = null, status, createdAt, updatedAt, archivedAt
+  }) {
+    super({ id, status, createdAt, updatedAt, archivedAt });
     this.organizationId = assertRequiredString(organizationId, 'organizationId');
     this.assignmentId = assertRequiredString(assignmentId, 'assignmentId');
     this.learnerId = assertRequiredString(learnerId, 'learnerId');
     this.submittedAt = submittedAt;
     this.contentReference = assertRequiredString(contentReference, 'contentReference');
-    this.score = null;
-    this.maxScore = null;
+    this.score = score == null ? null : Number(score);
+    this.maxScore = maxScore == null ? null : Number(maxScore);
   }
 }

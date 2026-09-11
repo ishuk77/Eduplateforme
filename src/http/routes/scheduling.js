@@ -1,10 +1,17 @@
-import { parseJson } from '../middleware/validation.js';
-import { authorizeRequest } from '../middleware/auth.js';
+import { makeCrudHandlers } from './_helpers.js';
 
 export function registerSchedulingRoutes(router, { service }) {
-  router.add('POST', '/scheduling/entries', async (request) => {
-    const body = await parseJson(request);
-    const identity = authorizeRequest(request, service, { organizationId: body.organizationId, permissions: ['scheduling.write'] });
-    return Response.json(await service.createScheduleEntry(body, identity.actorId), { status: 201 });
+  const handlers = makeCrudHandlers({
+    service,
+    resource: 'scheduleEntries',
+    create: (body, actorId) => service.createScheduleEntry(body, actorId),
+    readPermission: 'scheduling.read',
+    writePermission: 'scheduling.write'
   });
+  router.add('POST', '/scheduling/entries', handlers.create);
+  router.add('GET', '/scheduling/entries', handlers.list);
+  router.add('GET', '/scheduling/entries/:id', handlers.get);
+  router.add('PUT', '/scheduling/entries/:id', handlers.update);
+  router.add('DELETE', '/scheduling/entries/:id', handlers.remove);
+  router.add('GET', '/scheduling/entries/:id/history', handlers.history);
 }

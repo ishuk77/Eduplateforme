@@ -34,6 +34,21 @@ test('PostgreSQL migrations persist and reload application state', async () => {
     password: 'super-secret-password',
     organizationIds: [organization.id]
   }, 'bootstrap');
+  const notification = await firstService.createNotification({
+    organizationId: organization.id,
+    eventType: 'postgres.persistence',
+    channel: 'internal',
+    recipientId: person.id
+  }, 'bootstrap');
+  await firstService.upsertLocalizationProfile({
+    organizationId: organization.id,
+    countryCode: 'SN',
+    city: 'Dakar',
+    language: 'fr',
+    currency: 'USD',
+    timezone: 'Africa/Dakar',
+    dateFormat: 'DD/MM/YYYY'
+  }, 'bootstrap');
   const firstLogin = await firstService.authenticate({
     username: 'postgres-admin',
     password: 'super-secret-password',
@@ -51,6 +66,8 @@ test('PostgreSQL migrations persist and reload application state', async () => {
   const secondService = await initializePersistentEducationPlatformService({ connection: secondConnection });
   try {
     assert.equal(secondService.getCrudResource('organizations', organization.id).displayName, 'PostgreSQL');
+    assert.equal(secondService.getCrudResource('notifications', notification.id).eventType, 'postgres.persistence');
+    assert.equal(secondService.localizationProfiles.get(organization.id).city, 'Dakar');
     const secondLogin = await secondService.authenticate({
       username: 'postgres-admin',
       password: 'super-secret-password',

@@ -91,6 +91,182 @@ const modules = [
     ]
   },
   {
+    id: 'assignments',
+    path: '/assignments',
+    label: 'Devoirs',
+    eyebrow: 'Travail scolaire',
+    description: 'Publiez les devoirs, recevez les soumissions et notez-les sans quitter le suivi de classe.',
+    resources: [
+      {
+        id: 'assignments', title: 'Devoirs', path: '/assignments',
+        read: 'assignments.read', write: 'assignments.write',
+        fields: [['classId', 'Classe', 'reference', true, '/academics/classes', 'name'], ['title', 'Titre', 'text', true], ['type', 'Type', 'select', true, ['homework', 'exercise', 'quiz', 'exam']], ['dueAt', 'Échéance', 'datetime-local', true]],
+        columns: ['title', 'type', 'classId', 'dueAt']
+      },
+      {
+        id: 'assignmentSubmissions', title: 'Soumissions', path: '/assignments/submissions',
+        read: 'assignments.read', write: 'assignments.write',
+        fields: [['assignmentId', 'Devoir', 'reference', true, '/assignments', 'title'], ['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['contentReference', 'Référence du travail', 'text', true]],
+        columns: ['assignmentId', 'learnerId', 'submittedAt', 'score', 'maxScore'],
+        action: { label: 'Noter', path: '/assignments/submissions/grade', idField: 'submissionId', fields: [['score', 'Note', 'number', true], ['maxScore', 'Barème', 'number', true], ['coefficient', 'Coefficient', 'number', true]] }
+      }
+    ]
+  },
+  {
+    id: 'grading',
+    path: '/grading',
+    label: 'Notes',
+    eyebrow: 'Évaluation',
+    description: 'Configurez les barèmes, saisissez les notes et consultez la moyenne réelle des évaluations chargées.',
+    resources: [
+      {
+        id: 'gradingSystems', title: 'Systèmes de notation', path: '/grading/systems',
+        read: 'grading.read', write: 'grading.write',
+        fields: [['name', 'Nom', 'text', true], ['format', 'Format', 'select', true, ['/10', '/20', '/100', 'A-F', 'competency']], ['passingThreshold', 'Seuil de réussite', 'number', false]],
+        columns: ['name', 'format', 'passingThreshold']
+      },
+      {
+        id: 'grades', title: 'Notes', path: '/grading/grades',
+        read: 'grading.read', write: 'grading.write',
+        fields: [['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['assignmentId', 'Devoir', 'reference', false, '/assignments', 'title'], ['score', 'Note', 'number', true], ['maxScore', 'Barème', 'number', true], ['coefficient', 'Coefficient', 'number', true]],
+        columns: ['learnerId', 'assignmentId', 'score', 'maxScore', 'coefficient'],
+        summary: (items) => {
+          const latest = new Map();
+          for (const item of items) {
+            const key = `${item.learnerId}:${item.assignmentId ?? '__manual__'}`;
+            if (!latest.has(key) || Number(item.version) > Number(latest.get(key).version)) latest.set(key, item);
+          }
+          const effective = [...latest.values()];
+          const weight = effective.reduce((total, item) => total + Number(item.coefficient || 1), 0);
+          const points = effective.reduce((total, item) => total + ((Number(item.score) / Number(item.maxScore || 20)) * 20 * Number(item.coefficient || 1)), 0);
+          return `Moyenne pondérée : ${weight ? (points / weight).toFixed(2) : '0.00'} / 20`;
+        }
+      }
+    ]
+  },
+  {
+    id: 'attendance',
+    path: '/attendance',
+    label: 'Présences',
+    eyebrow: 'Assiduité',
+    description: 'Consignez la présence et suivez le taux d’assiduité calculé depuis les enregistrements réels.',
+    resources: [{
+      id: 'attendance', title: 'Registre de présence', path: '/attendance/records',
+      read: 'attendance.read', write: 'attendance.write',
+      fields: [['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['classId', 'Classe', 'reference', true, '/academics/classes', 'name'], ['date', 'Date', 'date', true], ['status', 'Statut', 'select', true, ['present', 'absent', 'late', 'excused', 'unexcused']]],
+      columns: ['date', 'learnerId', 'classId', 'status'],
+      summary: (items) => {
+        const present = items.filter((item) => !['absent', 'unexcused'].includes(item.status)).length;
+        return `Taux d’assiduité global : ${items.length ? ((present / items.length) * 100).toFixed(1) : '0.0'} %`;
+      }
+    }]
+  },
+  {
+    id: 'scheduling',
+    path: '/scheduling',
+    label: 'Emplois du temps',
+    eyebrow: 'Planification',
+    description: 'Planifiez les créneaux de cours par classe, matière et enseignant.',
+    resources: [{
+      id: 'scheduleEntries', title: 'Créneaux', path: '/scheduling/entries',
+      read: 'scheduling.read', write: 'scheduling.write',
+      fields: [['classId', 'Classe', 'reference', true, '/academics/classes', 'name'], ['subject', 'Matière', 'text', true], ['teacherPersonId', 'Enseignant', 'reference', true, '/people', 'familyName'], ['dayOfWeek', 'Jour', 'select', true, ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']], ['startsAt', 'Début', 'time', true], ['endsAt', 'Fin', 'time', true]],
+      columns: ['dayOfWeek', 'startsAt', 'endsAt', 'subject', 'teacherPersonId']
+    }]
+  },
+  {
+    id: 'finance',
+    path: '/finance',
+    label: 'Finances',
+    eyebrow: 'Facturation',
+    description: 'Configurez les frais, émettez les factures et enregistrez les paiements avec solde à jour.',
+    resources: [
+      {
+        id: 'fees', title: 'Types de frais', path: '/finance/fees', read: 'finance.read', write: 'finance.write',
+        fields: [['feeType', 'Type de frais', 'text', true], ['amount', 'Montant', 'number', true], ['currency', 'Devise', 'select', true, ['USD', 'EUR', 'CDF', 'RWF', 'HTG', 'KES', 'UGX']]],
+        columns: ['feeType', 'amount', 'currency']
+      },
+      {
+        id: 'invoices', title: 'Factures et soldes', path: '/finance/invoices', read: 'finance.read', write: 'finance.write',
+        fields: [['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['feeConfigurationId', 'Frais', 'reference', true, '/finance/fees', 'feeType'], ['amount', 'Montant', 'number', true], ['currency', 'Devise', 'select', true, ['USD', 'EUR', 'CDF', 'RWF', 'HTG', 'KES', 'UGX']]],
+        columns: ['learnerId', 'amount', 'currency', 'balance']
+      },
+      {
+        id: 'payments', title: 'Paiements', path: '/finance/payments', read: 'finance.read', write: 'finance.write',
+        fields: [['invoiceId', 'Facture', 'reference', true, '/finance/invoices', 'id'], ['amount', 'Montant', 'number', true], ['currency', 'Devise', 'select', true, ['USD', 'EUR', 'CDF', 'RWF', 'HTG', 'KES', 'UGX']], ['channel', 'Canal', 'text', true]],
+        columns: ['invoiceId', 'amount', 'currency', 'channel', 'receiptReference']
+      }
+    ]
+  },
+  {
+    id: 'notifications',
+    path: '/notifications',
+    label: 'Notifications',
+    eyebrow: 'Diffusion',
+    description: 'Créez les notifications et confirmez explicitement leur envoi.',
+    resources: [{
+      id: 'notifications', title: 'Notifications', path: '/notifications',
+      read: 'notifications.read', write: 'notifications.write',
+      fields: [['eventType', 'Événement', 'text', true], ['channel', 'Canal', 'select', true, ['internal', 'email', 'sms', 'mobile']], ['recipientId', 'Destinataire', 'text', true]],
+      columns: ['eventType', 'channel', 'recipientId', 'sentAt'],
+      action: { label: 'Marquer envoyée', path: '/notifications/sent', idField: 'notificationId', fields: [], show: (record) => !record.sentAt }
+    }]
+  },
+  {
+    id: 'virtualSchools',
+    path: '/virtual-schools',
+    label: 'Académie virtuelle',
+    eyebrow: 'Formation en ligne',
+    description: 'Créez des académies virtuelles et leurs formations gratuites ou payantes.',
+    resources: [
+      {
+        id: 'virtualSchools', title: 'Académies', path: '/virtual-schools', read: 'virtual-schools.read', write: 'virtual-schools.write',
+        fields: [['name', 'Nom', 'text', true], ['timezone', 'Fuseau horaire', 'text', true]], columns: ['name', 'timezone']
+      },
+      {
+        id: 'paidTrainings', title: 'Formations', path: '/virtual-schools/trainings', read: 'virtual-schools.read', write: 'virtual-schools.write',
+        fields: [['virtualSchoolId', 'Académie', 'reference', true, '/virtual-schools', 'name'], ['title', 'Titre', 'text', true], ['pricingModel', 'Tarification', 'select', true, ['free', 'paid']], ['amount', 'Montant', 'number', true], ['currency', 'Devise', 'select', true, ['USD', 'EUR', 'CDF', 'RWF', 'HTG', 'KES', 'UGX']], ['platformCommissionRate', 'Commission (%)', 'number', true]],
+        columns: ['title', 'pricingModel', 'amount', 'currency', 'platformCommissionRate']
+      }
+    ]
+  },
+  {
+    id: 'certificates',
+    path: '/certificates',
+    label: 'Certificats',
+    eyebrow: 'Attestations',
+    description: 'Émettez des certificats vérifiables associés à un apprenant.',
+    resources: [{
+      id: 'certificates', title: 'Certificats', path: '/certificates', read: 'certificates.read', write: 'certificates.write',
+      fields: [['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['certificateType', 'Type', 'text', true], ['title', 'Titre', 'text', true], ['verificationCode', 'Code de vérification', 'text', true]],
+      columns: ['title', 'certificateType', 'learnerId', 'verificationCode', 'qrCode']
+    }]
+  },
+  {
+    id: 'i18n',
+    path: '/i18n',
+    label: 'Localisation',
+    eyebrow: 'Profil régional',
+    description: 'Définissez la langue, la devise, le fuseau et le format de date de l’organisation.',
+    resources: [{
+      id: 'localizationProfiles', title: 'Profil de localisation', path: '/i18n/profiles', read: 'i18n.read', write: 'i18n.write',
+      fields: [['countryCode', 'Code pays', 'text', true], ['city', 'Ville', 'text', true], ['language', 'Langue', 'select', true, ['fr', 'en', 'es', 'pt', 'ar']], ['currency', 'Devise', 'select', true, ['USD', 'EUR', 'CDF', 'RWF', 'HTG', 'KES', 'UGX']], ['timezone', 'Fuseau horaire', 'text', true], ['dateFormat', 'Format de date', 'text', true]],
+      columns: ['countryCode', 'city', 'language', 'currency', 'timezone', 'dateFormat'], createOnly: true, history: false
+    }]
+  },
+  {
+    id: 'parentalConsents',
+    path: '/security/parental-consents',
+    label: 'Consentements',
+    eyebrow: 'Protection des mineurs',
+    description: 'Enregistrez et consultez les consentements parentaux par apprenant et finalité.',
+    resources: [{
+      id: 'parentalConsents', title: 'Consentements parentaux', path: '/security/parental-consents', read: 'security.read', write: 'security.write',
+      fields: [['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['parentPersonId', 'Responsable', 'reference', true, '/people', 'familyName'], ['scope', 'Finalité', 'text', true], ['grantedAt', 'Accord donné le', 'datetime-local', true]],
+      columns: ['learnerId', 'parentPersonId', 'scope', 'grantedAt'], createOnly: true
+    }]
+  },
+  {
     id: 'reports',
     path: '/reports',
     label: 'Rapports',
@@ -391,11 +567,17 @@ function resourceSection(resource) {
   const rows = payload.items.map((record) => `
     <article class="data-card" data-id="${escapeHtml(record.id)}">
       <dl>${resource.columns.map((column) => `<div><dt>${escapeHtml(column)}</dt><dd>${formatValue(record[column])}</dd></div>`).join('')}</dl>
-      ${can(resource.write) ? `<div class="row-actions"><button type="button" data-action="edit" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Modifier</button><button class="danger-link" type="button" data-action="archive" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Archiver</button></div>` : ''}
+      ${can(resource.write) && resource.action && (!resource.action.show || resource.action.show(record)) ? `
+        <form class="inline-action-form" data-record-action="${resource.id}" data-id="${escapeHtml(record.id)}">
+          ${resource.action.fields.map((field) => fieldInput(field)).join('')}
+          <button class="secondary-button" type="submit">${resource.action.label}</button>
+        </form>` : ''}
+      ${resource.history !== false ? `<div class="row-actions"><button type="button" data-action="history" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Historique</button>${can(resource.write) && !resource.createOnly ? `<button type="button" data-action="edit" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Modifier</button><button class="danger-link" type="button" data-action="archive" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Archiver</button>` : ''}</div><div class="record-history" aria-live="polite"></div>` : ''}
     </article>`).join('');
   return `
     <section class="surface-card resource-section" id="resource-${resource.id}">
       <div class="section-header"><div><p class="section-label">${payload.page.total} élément(s)</p><h2>${resource.title}</h2></div></div>
+      ${resource.summary ? `<p class="resource-summary" role="status">${escapeHtml(resource.summary(payload.items))}</p>` : ''}
       ${can(resource.write) ? `
         <details class="editor-panel">
           <summary>Ajouter un élément</summary>
@@ -516,6 +698,24 @@ function bindResources(module) {
       }
     });
   });
+  document.querySelectorAll('.inline-action-form').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const resource = byId.get(form.dataset.recordAction);
+      const body = Object.fromEntries(new FormData(form));
+      body[resource.action.idField] = form.dataset.id;
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      try {
+        await apiRequest(resource.action.path, { method: 'POST', body: JSON.stringify(body) });
+        notification(`${resource.action.label} : opération enregistrée.`);
+        await modulePage(module);
+      } catch (error) {
+        notification(error.message, 'error');
+        button.disabled = false;
+      }
+    });
+  });
   document.querySelectorAll('[data-action="edit"]').forEach((button) => {
     button.addEventListener('click', () => {
       const resource = byId.get(button.dataset.resource);
@@ -531,6 +731,24 @@ function bindResources(module) {
       details.querySelector('summary').textContent = 'Modifier l’élément';
       form.querySelector('button[type="submit"]').textContent = 'Enregistrer les modifications';
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  document.querySelectorAll('[data-action="history"]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const resource = byId.get(button.dataset.resource);
+      const region = button.closest('.data-card').querySelector('.record-history');
+      button.disabled = true;
+      region.textContent = 'Chargement de l’historique…';
+      try {
+        const history = await apiRequest(`${resource.path}/${button.dataset.id}/history`);
+        region.innerHTML = history.items.length
+          ? `<ul>${history.items.map((entry) => `<li><strong>${formatValue(entry.action)}</strong> · ${formatValue(entry.changedAt)}</li>`).join('')}</ul>`
+          : '<p>Aucune modification enregistrée.</p>';
+      } catch (error) {
+        region.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
     });
   });
   document.querySelectorAll('[data-action="archive"]').forEach((button) => {
