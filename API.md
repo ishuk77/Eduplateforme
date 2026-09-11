@@ -6,8 +6,82 @@
 - `DELETE /auth/logout`
 - `GET /auth/me`
 
+## Security model
+- Protected routes require an `Authorization` header with a bearer access token.
+- Access is permission-based and organization-scoped.
+- Include `organizationId` in query/body when listing scoped data.
+
+## Core foundation domains
+
+### Organizations
+- `POST /organizations`
+- `GET /organizations`
+- `GET /organizations/:id`
+- `PUT /organizations/:id`
+- `DELETE /organizations/:id` (archive)
+- `GET /organizations/:id/history`
+
+### People
+- `POST /users` (backward-compatible alias)
+- `POST /people`
+- `GET /people`
+- `GET /people/:id`
+- `PUT /people/:id`
+- `DELETE /people/:id` (archive)
+- `GET /people/:id/history`
+
+### Accounts
+- `POST /accounts`
+- `GET /accounts`
+- `GET /accounts/:id`
+- `PUT /accounts/:id`
+- `DELETE /accounts/:id` (archive)
+- `GET /accounts/:id/history`
+
+### Academics
+- `POST /academics/years`
+- `GET /academics/years`
+- `GET /academics/years/:id`
+- `PUT /academics/years/:id`
+- `DELETE /academics/years/:id` (archive)
+- `GET /academics/years/:id/history`
+- `POST /academics/programs`
+- `GET /academics/programs`
+- `GET /academics/programs/:id`
+- `PUT /academics/programs/:id`
+- `DELETE /academics/programs/:id` (archive)
+- `GET /academics/programs/:id/history`
+- `POST /academics/classes`
+- `GET /academics/classes`
+- `GET /academics/classes/:id`
+- `PUT /academics/classes/:id`
+- `DELETE /academics/classes/:id` (archive)
+- `GET /academics/classes/:id/history`
+- `POST /academics/enrollments`
+- `GET /academics/enrollments`
+- `GET /academics/enrollments/:id`
+- `PUT /academics/enrollments/:id`
+- `DELETE /academics/enrollments/:id` (archive)
+- `GET /academics/enrollments/:id/history`
+
+### Documents and credentials
+- `POST /documents`
+- `GET /documents`
+- `GET /documents/:id`
+- `PUT /documents/:id`
+- `DELETE /documents/:id` (archive)
+- `GET /documents/:id/history`
+- `POST /documents/versions`
+- `POST /credentials`
+- `GET /credentials`
+- `GET /credentials/:id`
+- `PUT /credentials/:id`
+- `DELETE /credentials/:id` (archive)
+- `GET /credentials/:id/history`
+- `POST /credentials/revisions`
+
 ## Protected CRUD examples
-Each protected route expects a ****** in the `Authorization` header.
+Each protected route expects a bearer token in the `Authorization` header.
 
 ### Calendar
 - `GET /calendar/events?organizationId=<orgId>`
@@ -55,6 +129,12 @@ Each protected route expects a ****** in the `Authorization` header.
 
 ## Audit
 - `GET /audit/trail?organizationId=<orgId>&limit=25&offset=0`
+- `GET /audit/events?organizationId=<orgId>&limit=25&offset=0`
+
+## Meta
+- `GET /meta/foundation`
+- `GET /meta/invariants`
+- `GET /meta/openapi`
 
 ## Example login
 ```bash

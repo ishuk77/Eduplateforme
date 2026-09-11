@@ -79,6 +79,15 @@ const COLLECTIONS = {
 };
 
 const RESOURCE_TO_COLLECTION = {
+  organizations: 'organizations',
+  people: 'people',
+  accounts: 'accounts',
+  academicYears: 'academicYears',
+  programs: 'programs',
+  classes: 'classes',
+  enrollments: 'enrollments',
+  documents: 'documents',
+  credentials: 'credentials',
   grades: 'grades',
   attendance: 'attendance',
   assignments: 'assignments',
@@ -92,6 +101,32 @@ const RESOURCE_TO_COLLECTION = {
   financeInvoices: 'invoices',
   financePayments: 'payments'
 };
+
+const RESOURCE_ORGANIZATION_RESOLVER = {
+  organizations: (record) => [record.id],
+  people: (record) => [record.primaryOrganizationId ?? null],
+  accounts: (record) => Array.isArray(record.organizationIds) ? record.organizationIds : [record.organizationId ?? null],
+  default: (record) => [record.organizationId ?? null]
+};
+
+function normalizePaging({ limit = 25, offset = 0 } = {}) {
+  return {
+    limit: Math.max(1, Math.min(200, Number(limit) || 25)),
+    offset: Math.max(0, Number(offset) || 0)
+  };
+}
+
+function matchesFilterValue(recordValue, filterValue) {
+  if (Array.isArray(recordValue)) {
+    return recordValue.some((entry) => matchesFilterValue(entry, filterValue));
+  }
+
+  if (recordValue === undefined || recordValue === null) {
+    return false;
+  }
+
+  return String(recordValue) === String(filterValue);
+}
 
 function cloneRecord(value) {
   return value ? JSON.parse(JSON.stringify(value)) : null;
@@ -151,9 +186,18 @@ export class PersistentEducationPlatformService extends EducationPlatformService
   }
 
   persistRecord(collectionKey, record, { actorId = null, action = 'upsert' } = {}) {
-    this.repositories[collectionKey].upsert(record, { actorId, action });
+    const normalizedRecord = record;
+    if (collectionKey === 'organizations' && !normalizedRecord.organizationId) {
+      normalizedRecord.organizationId = normalizedRecord.id;
+    } else if (collectionKey === 'people' && !normalizedRecord.organizationId) {
+      normalizedRecord.organizationId = normalizedRecord.primaryOrganizationId ?? null;
+    } else if (collectionKey === 'accounts' && !normalizedRecord.organizationId) {
+      normalizedRecord.organizationId = normalizedRecord.organizationIds?.[0] ?? null;
+    }
+
+    this.repositories[collectionKey].upsert(normalizedRecord, { actorId, action });
     if (collectionKey === 'localizationProfiles') {
-      upsertMapValue(this.localizationProfiles, record, (value) => value.organizationId);
+      upsertMapValue(this.localizationProfiles, normalizedRecord, (value) => value.organizationId);
       return;
     }
 
@@ -161,7 +205,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       return;
     }
 
-    upsertMapValue(this[collectionKey], record);
+    upsertMapValue(this[collectionKey], normalizedRecord);
   }
 
   recordEvent(type, subject, actorId = null, payload = {}, options = {}) {
@@ -660,22 +704,64 @@ export class PersistentEducationPlatformService extends EducationPlatformService
 
   listCrudResource(resource, filters = {}) {
     const collectionKey = RESOURCE_TO_COLLECTION[resource];
-    if (!collectionKey) {
+    const collection = collectionKey ? this[collectionKey] : null;
+    if (!collectionKey || !collection?.values) {
       throw new ValidationError(`Unsupported resource: ${resource}`);
     }
-    return this.repositories[collectionKey].list(filters);
+
+    const { limit, offset } = normalizePaging(filters);
+    const includeArchived = filters.includeArchived === true;
+    const organizationId = filters.organizationId ?? null;
+    const organizationIds = Array.isArray(filters.organizationIds)
+      ? filters.organizationIds.filter((value) => typeof value === 'string' && value.length > 0)
+      : [];
+    const scopedOrganizationIds = organizationId ? [organizationId] : organizationIds;
+    const organizationResolver = RESOURCE_ORGANIZATION_RESOLVER[resource] ?? RESOURCE_ORGANIZATION_RESOLVER.default;
+    const controlFields = new Set(['limit', 'offset', 'includeArchived', 'organizationId', 'organizationIds']);
+
+    const filtered = Array.from(collection.values())
+      .filter((record) => includeArchived || record.status !== 'archived')
+      .filter((record) => {
+        if (scopedOrganizationIds.length === 0) {
+          return true;
+        }
+
+        const recordOrganizationIds = organizationResolver(record).filter(Boolean);
+        return scopedOrganizationIds.some((candidateOrganizationId) =>
+          recordOrganizationIds.includes(candidateOrganizationId)
+        );
+      })
+      .filter((record) =>
+        Object.entries(filters).every(([field, expectedValue]) => {
+          if (controlFields.has(field) || expectedValue === undefined || expectedValue === null || expectedValue === '') {
+            return true;
+          }
+          return matchesFilterValue(record[field], expectedValue);
+        })
+      )
+      .sort((left, right) => Date.parse(right.updatedAt ?? right.createdAt ?? 0) - Date.parse(left.updatedAt ?? left.createdAt ?? 0));
+
+    return {
+      items: filtered.slice(offset, offset + limit),
+      page: {
+        total: filtered.length,
+        limit,
+        offset
+      }
+    };
   }
 
   getCrudResource(resource, id) {
     const collectionKey = RESOURCE_TO_COLLECTION[resource];
-    if (!collectionKey) {
+    const collection = collectionKey ? this[collectionKey] : null;
+    if (!collectionKey || !collection?.has) {
       throw new ValidationError(`Unsupported resource: ${resource}`);
     }
-    const record = this.repositories[collectionKey].get(id);
+    const record = collection.get(id);
     if (!record) {
       throw new ValidationError(`Unknown ${resource}: ${id}`);
     }
-    return hydrateValue(COLLECTIONS[collectionKey], record);
+    return record;
   }
 
   updateCrudResource(resource, id, patch, actorId = null) {

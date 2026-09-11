@@ -23,7 +23,21 @@ The repository now includes both:
    - i18n and localization profile
    - platform subscriptions
    - parental consent and expanded audit history
-3. the responsive web/mobile shell assets that can be connected to live backend workflows
+3. the responsive web/mobile shell assets connected to live backend metadata/auth endpoints
+
+## Consolidated security baseline
+
+- JWT access + refresh token flow: `POST /auth/login`, `POST /auth/refresh`, `DELETE /auth/logout`, `GET /auth/me`
+- Role/permission checks on protected routes (for example `organizations.*`, `people.*`, `accounts.*`, `academics.*`, `documents.*`, `credentials.*`, `audit.read`)
+- Multi-tenant organization isolation enforced through token organization scope
+- Input validation (JSON parsing, blocked suspicious payload patterns, zod schemas on auth/account creation)
+- Consistent API error payloads with explicit status codes
+
+### Still to harden in future iterations
+
+- Rotate and externalize production secrets (`JWT_SECRET`, `DATA_ENCRYPTION_KEY`)
+- Add brute-force protection per account on authentication endpoints
+- Expand fine-grained field-level authorization and audit review workflows
 
 ## Project structure
 
@@ -45,3 +59,11 @@ npm install
 npm test
 npm start
 ```
+
+## Core API coverage now available
+
+- Organizations: create + list/read/update/archive/history
+- People and user accounts: create + list/read/update/archive/history
+- Academics (`years`, `programs`, `classes`, `enrollments`): create + list/read/update/archive/history
+- Documents and credentials: create + list/read/update/archive/history + version/revision routes
+- Audit/meta: `/audit/trail`, `/audit/events`, `/meta/foundation`, `/meta/invariants`, `/meta/openapi`

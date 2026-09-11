@@ -94,6 +94,15 @@ function createOpenApiDescription() {
       '/auth/refresh': { post: { summary: 'Refresh an access token' } },
       '/auth/logout': { delete: { summary: 'Revoke a refresh token' } },
       '/auth/me': { get: { summary: 'Return the authenticated user' } },
+      '/organizations': { get: { summary: 'List organizations' }, post: { summary: 'Create organization' } },
+      '/people': { get: { summary: 'List people' }, post: { summary: 'Create person' } },
+      '/accounts': { get: { summary: 'List accounts' }, post: { summary: 'Create account' } },
+      '/academics/years': { get: { summary: 'List academic years' }, post: { summary: 'Create academic year' } },
+      '/academics/programs': { get: { summary: 'List programs' }, post: { summary: 'Create program' } },
+      '/academics/classes': { get: { summary: 'List classes' }, post: { summary: 'Create class' } },
+      '/academics/enrollments': { get: { summary: 'List enrollments' }, post: { summary: 'Create enrollment' } },
+      '/documents': { get: { summary: 'List documents' }, post: { summary: 'Create document' } },
+      '/credentials': { get: { summary: 'List credentials' }, post: { summary: 'Create credential' } },
       '/audit/trail': { get: { summary: 'List audit entries' } },
       '/grading/grades': { get: { summary: 'List grades' }, post: { summary: 'Create grade' } },
       '/attendance/records': { get: { summary: 'List attendance records' }, post: { summary: 'Create attendance record' } },
@@ -148,7 +157,9 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
         return withSecurityHeaders(await serveStaticAsset(url.pathname), corsOrigin);
       }
 
-      const currentModule = request.method === 'GET' ? resolveModule(url.pathname) : null;
+      const currentModule = request.method === 'GET' && !request.headers.get('authorization')
+        ? resolveModule(url.pathname)
+        : null;
       if (currentModule) {
         const html = renderAppShell({ currentModule, modules, platform: foundation.describePlatform() });
         return withSecurityHeaders(new Response(html, {

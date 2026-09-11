@@ -5,13 +5,23 @@ function getOrganizationIdFromSearch(url) {
   return url.searchParams.get('organizationId') ?? null;
 }
 
+function parseIncludeArchived(url) {
+  const value = url.searchParams.get('includeArchived');
+  return value === 'true' || value === '1';
+}
+
 export function bootstrapOrAuthorize(request, service, body, permissions = []) {
   if (service.accounts.size === 0) {
     return { actorId: 'bootstrap', accountId: 'bootstrap', organizationIds: [], permissions: ['*'] };
   }
 
+  const organizationId = body?.organizationId
+    ?? body?.primaryOrganizationId
+    ?? body?.organizationIds?.[0]
+    ?? null;
+
   return authorizeRequest(request, service, {
-    organizationId: body?.organizationId ?? null,
+    organizationId,
     permissions
   });
 }
@@ -23,6 +33,7 @@ export function makeCrudHandlers({
   readPermission,
   writePermission,
   getOrganizationIdFromBody = (body) => body.organizationId ?? null,
+  getOrganizationIdFromRecord = (record) => record.organizationId ?? null,
   listFilters = (url) => ({ organizationId: getOrganizationIdFromSearch(url), ...parsePagination(url) })
 }) {
   return {
@@ -36,16 +47,20 @@ export function makeCrudHandlers({
     },
     list: async (request, url) => {
       const filters = listFilters(url);
-      authorizeRequest(request, service, {
+      const identity = authorizeRequest(request, service, {
         organizationId: filters.organizationId ?? null,
         permissions: [readPermission]
       });
+      if (!filters.organizationId) {
+        filters.organizationIds = identity.organizationIds;
+      }
+      filters.includeArchived = parseIncludeArchived(url);
       return Response.json(service.listCrudResource(resource, filters));
     },
     get: async (request, _url, params) => {
       const record = service.getCrudResource(resource, params.id);
       authorizeRequest(request, service, {
-        organizationId: record.organizationId ?? null,
+        organizationId: getOrganizationIdFromRecord(record),
         permissions: [readPermission]
       });
       return Response.json(record);
@@ -54,7 +69,7 @@ export function makeCrudHandlers({
       const existing = service.getCrudResource(resource, params.id);
       const body = await parseJson(request);
       const identity = authorizeRequest(request, service, {
-        organizationId: existing.organizationId ?? null,
+        organizationId: getOrganizationIdFromRecord(existing),
         permissions: [writePermission]
       });
       return Response.json(service.updateCrudResource(resource, params.id, body, identity.actorId));
@@ -62,7 +77,7 @@ export function makeCrudHandlers({
     remove: async (request, _url, params) => {
       const existing = service.getCrudResource(resource, params.id);
       const identity = authorizeRequest(request, service, {
-        organizationId: existing.organizationId ?? null,
+        organizationId: getOrganizationIdFromRecord(existing),
         permissions: [writePermission]
       });
       return Response.json(service.archiveCrudResource(resource, params.id, identity.actorId));
@@ -70,7 +85,7 @@ export function makeCrudHandlers({
     history: async (request, url, params) => {
       const existing = service.getCrudResource(resource, params.id);
       authorizeRequest(request, service, {
-        organizationId: existing.organizationId ?? null,
+        organizationId: getOrganizationIdFromRecord(existing),
         permissions: [readPermission]
       });
       return Response.json(service.getCrudHistory(resource, params.id, parsePagination(url)));
