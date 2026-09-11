@@ -30,6 +30,13 @@ export class Organization extends Entity {
     localIdentifiers = [],
     organizationType = 'institution',
     parentOrganizationId = null,
+    legalForm = null,
+    registrationNumber = null,
+    taxIdentifier = null,
+    administrativeAuthority = null,
+    operationalStatus = 'operational',
+    headquartersAddress = {},
+    officialContact = {},
     settings = {},
     lifecycle = {}
   }) {
@@ -47,6 +54,13 @@ export class Organization extends Entity {
     );
     this.organizationType = assertRequiredString(organizationType, 'organizationType');
     this.parentOrganizationId = assertOptionalString(parentOrganizationId, 'parentOrganizationId');
+    this.legalForm = assertOptionalString(legalForm, 'legalForm');
+    this.registrationNumber = assertOptionalString(registrationNumber, 'registrationNumber');
+    this.taxIdentifier = assertOptionalString(taxIdentifier, 'taxIdentifier');
+    this.administrativeAuthority = assertOptionalString(administrativeAuthority, 'administrativeAuthority');
+    this.operationalStatus = assertRequiredString(operationalStatus, 'operationalStatus');
+    this.headquartersAddress = assertPlainObject(headquartersAddress, 'headquartersAddress');
+    this.officialContact = assertPlainObject(officialContact, 'officialContact');
     this.settings = assertPlainObject(settings, 'settings');
 
     if (this.nationalInstitutionId !== null && this.nationalInstitutionId === this.internalReference) {

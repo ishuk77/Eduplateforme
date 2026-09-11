@@ -24,7 +24,15 @@ export const onboardingSchema = z.object({
   displayName: z.string().trim().min(2, 'displayName is required'),
   internalReference: z.string().trim().min(2, 'internalReference is required'),
   countryCode: z.string().trim().length(2, 'countryCode must contain 2 characters'),
-  organizationType: z.string().trim().min(1).default('institution')
+  organizationType: z.string().trim().min(1).default('institution'),
+  nationalInstitutionId: z.string().trim().min(1).optional().nullable(),
+  legalForm: z.string().trim().min(1).optional().nullable(),
+  registrationNumber: z.string().trim().min(1).optional().nullable(),
+  taxIdentifier: z.string().trim().min(1).optional().nullable(),
+  administrativeAuthority: z.string().trim().min(1).optional().nullable(),
+  operationalStatus: z.string().trim().min(1).default('operational'),
+  headquartersAddress: z.record(z.string(), z.unknown()).default({}),
+  officialContact: z.record(z.string(), z.unknown()).default({})
 });
 
 export const accountCreationSchema = z.object({

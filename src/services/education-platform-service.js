@@ -13,6 +13,22 @@ import { VirtualSchool, PaidTraining } from '../domain/virtual-schools/virtual-s
 import { Certificate } from '../domain/certificates/certificates.js';
 import { PlatformSubscription } from '../domain/subscriptions/subscriptions.js';
 import { LocalizationProfile } from '../domain/i18n/i18n.js';
+import {
+  AcademicLevel,
+  AcademicPeriod,
+  Accreditation,
+  Campus,
+  ContextualPermissionRule,
+  Course,
+  GuardianLearnerRelation,
+  GuardianProfile,
+  InstitutionVerification,
+  LearnerLifecycleEvent,
+  OperatingAuthorization,
+  ProfessionalAssignment,
+  ProfessionalProfile,
+  Subject
+} from '../domain/institutional/institutional.js';
 import { ValidationError, createPermanentId } from '../shared/entity.js';
 
 function paginate(items, { limit = 25, offset = 0 } = {}) {
@@ -52,10 +68,193 @@ export class EducationPlatformService extends FoundationService {
     this.localizationProfiles = new Map();
     this.platformSubscriptions = new Map();
     this.parentalConsents = new Map();
+    this.campuses = new Map();
+    this.operatingAuthorizations = new Map();
+    this.accreditations = new Map();
+    this.institutionVerifications = new Map();
+    this.guardianProfiles = new Map();
+    this.professionalProfiles = new Map();
+    this.guardianLearnerRelations = new Map();
+    this.professionalAssignments = new Map();
+    this.academicPeriods = new Map();
+    this.academicLevels = new Map();
+    this.subjects = new Map();
+    this.courses = new Map();
+    this.learnerLifecycleEvents = new Map();
+    this.contextualPermissionRules = new Map();
   }
 
   assertOrganizationContext(organizationId) {
     this.assertExists(this.organizations, organizationId, 'organization');
+  }
+
+  assertTenantRecord(collection, id, organizationId, label) {
+    this.assertExists(collection, id, label);
+    if (collection.get(id).organizationId !== organizationId) {
+      throw new ValidationError(`${label} must belong to the same organization.`);
+    }
+    return collection.get(id);
+  }
+
+  createCampus(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const campus = new Campus(input);
+    this.campuses.set(campus.id, campus);
+    this.recordEvent('campus.created', campus, actorId);
+    return campus;
+  }
+
+  createOperatingAuthorization(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const authorization = new OperatingAuthorization(input);
+    this.operatingAuthorizations.set(authorization.id, authorization);
+    this.recordEvent('operating-authorization.created', authorization, actorId);
+    return authorization;
+  }
+
+  createAccreditation(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    if (input.targetType === 'institution' && input.targetId !== input.organizationId) {
+      throw new ValidationError('Institution accreditation targetId must equal organizationId.');
+    }
+    if (input.targetType === 'site') this.assertTenantRecord(this.campuses, input.targetId, input.organizationId, 'campus');
+    if (input.targetType === 'program') this.assertTenantRecord(this.programs, input.targetId, input.organizationId, 'program');
+    if (input.targetType === 'level') this.assertTenantRecord(this.academicLevels, input.targetId, input.organizationId, 'academic level');
+    const accreditation = new Accreditation(input);
+    this.accreditations.set(accreditation.id, accreditation);
+    this.recordEvent('accreditation.created', accreditation, actorId);
+    return accreditation;
+  }
+
+  createInstitutionVerification(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    if (Array.from(this.institutionVerifications.values()).some((item) => item.publicCode === input.publicCode)) {
+      throw new ValidationError('publicCode must be unique.');
+    }
+    const verification = new InstitutionVerification(input);
+    this.institutionVerifications.set(verification.id, verification);
+    this.recordEvent('institution-verification.created', verification, actorId);
+    return verification;
+  }
+
+  createGuardianProfile(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    this.assertExists(this.people, input.personId, 'person');
+    const person = this.people.get(input.personId);
+    if (person.primaryOrganizationId && person.primaryOrganizationId !== input.organizationId) {
+      throw new ValidationError('Guardian profile person must belong to the same organization.');
+    }
+    const profile = new GuardianProfile(input);
+    this.guardianProfiles.set(profile.id, profile);
+    this.recordEvent('guardian-profile.created', profile, actorId);
+    return profile;
+  }
+
+  createProfessionalProfile(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    this.assertExists(this.people, input.personId, 'person');
+    const person = this.people.get(input.personId);
+    if (person.primaryOrganizationId && person.primaryOrganizationId !== input.organizationId) {
+      throw new ValidationError('Professional profile person must belong to the same organization.');
+    }
+    const assignmentOrganizationIds = [...new Set([
+      input.organizationId,
+      ...(input.assignmentOrganizationIds ?? [])
+    ])];
+    for (const organizationId of assignmentOrganizationIds) {
+      this.assertOrganizationContext(organizationId);
+    }
+    const profile = new ProfessionalProfile({ ...input, assignmentOrganizationIds });
+    this.professionalProfiles.set(profile.id, profile);
+    this.recordEvent('professional-profile.created', profile, actorId);
+    return profile;
+  }
+
+  createGuardianLearnerRelation(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    this.assertTenantRecord(this.guardianProfiles, input.guardianProfileId, input.organizationId, 'guardian profile');
+    this.assertTenantRecord(this.learners, input.learnerId, input.organizationId, 'learner');
+    const relation = new GuardianLearnerRelation(input);
+    this.guardianLearnerRelations.set(relation.id, relation);
+    this.recordEvent('guardian-learner-relation.created', relation, actorId);
+    return relation;
+  }
+
+  createProfessionalAssignment(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    this.assertExists(this.professionalProfiles, input.professionalProfileId, 'professional profile');
+    const profile = this.professionalProfiles.get(input.professionalProfileId);
+    if (!profile.assignmentOrganizationIds.includes(input.organizationId)) {
+      throw new ValidationError('Professional profile is not authorized for assignments in this organization.');
+    }
+    if (input.campusId) this.assertTenantRecord(this.campuses, input.campusId, input.organizationId, 'campus');
+    const assignment = new ProfessionalAssignment(input);
+    this.professionalAssignments.set(assignment.id, assignment);
+    this.recordEvent('professional-assignment.created', assignment, actorId);
+    return assignment;
+  }
+
+  createAcademicPeriod(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    this.assertTenantRecord(this.academicYears, input.academicYearId, input.organizationId, 'academic year');
+    const period = new AcademicPeriod(input);
+    this.academicPeriods.set(period.id, period);
+    this.recordEvent('academic-period.created', period, actorId);
+    return period;
+  }
+
+  createAcademicLevel(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const level = new AcademicLevel(input);
+    this.academicLevels.set(level.id, level);
+    this.recordEvent('academic-level.created', level, actorId);
+    return level;
+  }
+
+  createSubject(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const subject = new Subject(input);
+    this.subjects.set(subject.id, subject);
+    this.recordEvent('subject.created', subject, actorId);
+    return subject;
+  }
+
+  createCourse(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    this.assertTenantRecord(this.subjects, input.subjectId, input.organizationId, 'subject');
+    this.assertTenantRecord(this.academicPeriods, input.academicPeriodId, input.organizationId, 'academic period');
+    if (input.classId) this.assertTenantRecord(this.classes, input.classId, input.organizationId, 'class');
+    if (input.programId) this.assertTenantRecord(this.programs, input.programId, input.organizationId, 'program');
+    for (const assignmentId of input.teacherAssignmentIds ?? []) {
+      this.assertTenantRecord(this.professionalAssignments, assignmentId, input.organizationId, 'professional assignment');
+    }
+    const course = new Course(input);
+    this.courses.set(course.id, course);
+    this.recordEvent('course.created', course, actorId);
+    return course;
+  }
+
+  recordLearnerLifecycleEvent(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const learner = this.assertTenantRecord(this.learners, input.learnerId, input.organizationId, 'learner');
+    const event = new LearnerLifecycleEvent(input);
+    this.learnerLifecycleEvents.set(event.id, event);
+    learner.status = event.eventType;
+    learner.touch(new Date(event.occurredAt));
+    this.recordEvent(`learner-lifecycle.${event.eventType}`, event, actorId, {
+      previousContext: event.previousContext,
+      newContext: event.newContext,
+      authority: event.authority
+    });
+    return event;
+  }
+
+  createContextualPermissionRule(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const rule = new ContextualPermissionRule(input);
+    this.contextualPermissionRules.set(rule.id, rule);
+    this.recordEvent('contextual-permission-rule.created', rule, actorId);
+    return rule;
   }
 
   configureGradingSystem(input, actorId = null) {

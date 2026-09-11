@@ -33,6 +33,7 @@ export function makeCrudHandlers({
   create,
   readPermission,
   writePermission,
+  contextualResource = null,
   getOrganizationIdFromBody = (body) => body.organizationId ?? null,
   getOrganizationIdFromRecord = (record) => record.organizationId ?? null,
   listFilters = (url) => ({ organizationId: getOrganizationIdFromSearch(url), ...parsePagination(url) })
@@ -42,7 +43,13 @@ export function makeCrudHandlers({
       const body = await parseJson(request);
       const identity = authorizeRequest(request, service, {
         organizationId: getOrganizationIdFromBody(body),
-        permissions: [writePermission]
+        permissions: [writePermission],
+        context: contextualResource ? {
+          resource: contextualResource,
+          action: 'write',
+          scopeType: body.classId ? 'class' : body.programId ? 'program' : body.campusId ? 'site' : body.learnerId ? 'learner' : 'organization',
+          scopeId: body.classId ?? body.programId ?? body.campusId ?? body.learnerId ?? null
+        } : null
       });
       return Response.json(await create(body, identity.actorId), { status: 201 });
     },
@@ -71,7 +78,13 @@ export function makeCrudHandlers({
       const record = await service.getCrudResource(resource, params.id);
       authorizeRequest(request, service, {
         organizationId: getOrganizationIdFromRecord(record),
-        permissions: [readPermission]
+        permissions: [readPermission],
+        context: contextualResource ? {
+          resource: contextualResource,
+          action: 'read',
+          scopeType: record.classId ? 'class' : record.programId ? 'program' : record.campusId ? 'site' : record.learnerId ? 'learner' : 'organization',
+          scopeId: record.classId ?? record.programId ?? record.campusId ?? record.learnerId ?? null
+        } : null
       });
       return Response.json(record);
     },
@@ -80,7 +93,13 @@ export function makeCrudHandlers({
       const body = await parseJson(request);
       const identity = authorizeRequest(request, service, {
         organizationId: getOrganizationIdFromRecord(existing),
-        permissions: [writePermission]
+        permissions: [writePermission],
+        context: contextualResource ? {
+          resource: contextualResource,
+          action: 'write',
+          scopeType: existing.classId ? 'class' : existing.programId ? 'program' : existing.campusId ? 'site' : existing.learnerId ? 'learner' : 'organization',
+          scopeId: existing.classId ?? existing.programId ?? existing.campusId ?? existing.learnerId ?? null
+        } : null
       });
       return Response.json(await service.updateCrudResource(resource, params.id, body, identity.actorId));
     },
@@ -88,7 +107,13 @@ export function makeCrudHandlers({
       const existing = await service.getCrudResource(resource, params.id);
       const identity = authorizeRequest(request, service, {
         organizationId: getOrganizationIdFromRecord(existing),
-        permissions: [writePermission]
+        permissions: [writePermission],
+        context: contextualResource ? {
+          resource: contextualResource,
+          action: 'write',
+          scopeType: existing.classId ? 'class' : existing.programId ? 'program' : existing.campusId ? 'site' : existing.learnerId ? 'learner' : 'organization',
+          scopeId: existing.classId ?? existing.programId ?? existing.campusId ?? existing.learnerId ?? null
+        } : null
       });
       return Response.json(await service.archiveCrudResource(resource, params.id, identity.actorId));
     },

@@ -21,6 +21,10 @@ dans le JSON. Il est déposé uniquement dans un cookie `HttpOnly`,
 - Protected routes require an `Authorization` header with a bearer access token.
 - Access is permission-based and organization-scoped.
 - Include `organizationId` in query/body when listing scoped data.
+- Contextual RBAC rules: CRUD + history at `/security/contextual-permissions`.
+  Each rule binds a role, resource, action, effect, and scope
+  (`organization`, `site`, `program`, `class`, `learner`, `own`) without
+  changing account memberships.
 
 ## Core foundation domains
 
@@ -31,6 +35,39 @@ dans le JSON. Il est déposé uniquement dans un cookie `HttpOnly`,
 - `PUT /organizations/:id`
 - `DELETE /organizations/:id` (archive)
 - `GET /organizations/:id/history`
+
+L’identifiant technique `organizationId`, l’identifiant institutionnel
+national, les identifiants locaux de site et les références internes sont des
+champs distincts. Une organisation peut aussi porter sa forme juridique, son
+immatriculation, son identifiant fiscal, son autorité administrative, son état
+opérationnel, son siège et son contact officiel.
+
+### Institution, réglementation et vérification
+- CRUD + historique : `/institution/campuses`
+- CRUD + historique : `/institution/operating-authorizations`
+- CRUD + historique : `/institution/accreditations`
+- CRUD + historique : `/institution/verifications`
+- `POST /institution/operating-authorizations/:id/transition`
+- `POST /institution/accreditations/:id/transition`
+- `POST /institution/verifications/:id/transition`
+- `GET /public/institutions/verify/:code` (public, limité aux champs publiables)
+
+Les autorisations de fonctionnement et les accréditations sont deux collections
+indépendantes. Les transitions conservent le motif, l’autorité, la preuve et
+l’horodatage. Les statuts publics sont `UNVERIFIED`, `PENDING_VERIFICATION`,
+`VERIFIED`, `VERIFIED_BY_AUTHORITY`, `SUSPENDED` et `REVOKED`.
+
+### Profils métier
+- CRUD + historique : `/profiles/guardians`
+- CRUD + historique : `/profiles/professionals`
+- CRUD + historique : `/profiles/guardian-relations`
+- `POST /profiles/guardian-relations/:id/withdraw`
+- CRUD + historique : `/profiles/professional-assignments`
+
+Ces profils référencent une `Person` sans créer de nouveau `Account`. Les
+relations responsables-apprenants portent leurs propres permissions et peuvent
+être retirées; les affectations professionnelles sont contextualisées par
+organisation et, facultativement, par campus.
 
 ### People
 - `POST /users` (backward-compatible alias)
@@ -74,6 +111,20 @@ dans le JSON. Il est déposé uniquement dans un cookie `HttpOnly`,
 - `PUT /academics/enrollments/:id`
 - `DELETE /academics/enrollments/:id` (archive)
 - `GET /academics/enrollments/:id/history`
+- CRUD + historique : `/academics/periods` (semestres/trimestres)
+- CRUD + historique : `/academics/levels`
+- CRUD + historique : `/academics/subjects`
+- CRUD + historique : `/academics/courses`
+- `POST /academics/lifecycle-events`
+- `GET /academics/lifecycle-events`
+- `GET /academics/lifecycle-events/:id`
+- `GET /academics/lifecycle-events/:id/history`
+
+`Subject` décrit la matière; `Course` l’instancie pour une période, un groupe
+ou programme et des affectations enseignantes. Le journal longitudinal accepte
+admission, inscription, promotion, redoublement, changements, suspension,
+reprise, abandon, exclusion, diplôme, certification, décès et archivage avec
+ancien/nouveau contexte, motif, preuve et autorité.
 
 ### Documents and credentials
 - `POST /documents`

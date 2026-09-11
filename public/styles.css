@@ -101,6 +101,11 @@ button:disabled { cursor: wait; opacity: .6; }
 .record-history:not(:empty) { margin-top: .75rem; color: var(--muted); font-size: .85rem; }
 .record-history ul { margin: 0; padding-left: 1.2rem; }
 .empty-state { padding: 1.5rem; text-align: center; color: var(--muted); border: 1px dashed #b9c6d8; border-radius: .9rem; }
+.verification-result { margin-top: 1.25rem; }
+.verification-result dl { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.verification-result dl div { padding: .75rem; border-radius: .7rem; background: #f6f8fc; }
+.verification-result dt { color: var(--muted); font-size: .75rem; font-weight: 800; text-transform: uppercase; }
+.verification-result dd { margin: .25rem 0 0; }
 
 @media (min-width: 720px) {
   .landing-hero { grid-template-columns: 1.35fr .75fr; }

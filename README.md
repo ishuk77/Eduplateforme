@@ -23,6 +23,11 @@ The repository now includes both:
    - i18n and localization profile
    - platform subscriptions
    - parental consent and expanded audit history
+   - legal/administrative identity, campuses and operating authorizations
+   - accreditation lifecycle and controlled public institution verification
+   - guardian/professional profiles and contextual multi-organization assignments
+   - periods, levels, subjects, courses and longitudinal learner lifecycle
+   - contextual RBAC rules by resource, action and scope
 3. l’application web/mobile fonctionnelle connectée aux API réelles :
    - landing publique, inscription, connexion et déconnexion
    - création guidée de la première école avec rôle administrateur
@@ -31,6 +36,8 @@ The repository now includes both:
    - écrans opérationnels pour devoirs/soumissions/notation, notes et
      moyennes, assiduité, emplois du temps, finances, notifications,
      académies virtuelles, certificats, localisation et consentements parentaux
+   - écrans institution, conformité, profils métier et cursus, plus une page
+     publique de vérification limitée aux champs explicitement publiables
 
 ## Créer le premier compte et tester
 
