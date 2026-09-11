@@ -86,15 +86,21 @@ export function requireIdentity(request, service) {
 
 export function authorizeRequest(request, service, { organizationId = null, permissions = [] } = {}) {
   const identity = requireIdentity(request, service);
-  if (organizationId && !identity.organizationIds.includes(organizationId)) {
+  const scopedOrganizationId = organizationId ?? identity.organizationId ?? null;
+  if (scopedOrganizationId && !identity.organizationIds.includes(scopedOrganizationId)) {
     throw new ApiError('FORBIDDEN', 'Cross-organization access is forbidden.', 403);
   }
 
+  const scopedPermissions = service.getAccountPermissions(identity.accountId, scopedOrganizationId);
   for (const permission of permissions) {
-    if (!identity.permissions.includes('*') && !identity.permissions.includes(permission)) {
+    if (!scopedPermissions.includes('*') && !scopedPermissions.includes(permission)) {
       throw new ApiError('FORBIDDEN', `Missing permission: ${permission}`, 403);
     }
   }
 
-  return identity;
+  return {
+    ...identity,
+    organizationId: scopedOrganizationId,
+    permissions: scopedPermissions
+  };
 }

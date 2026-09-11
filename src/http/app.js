@@ -170,7 +170,7 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
       }
 
       enforceRateLimit(request, { namespace: 'api' });
-      if (url.pathname === '/auth/login' || url.pathname === '/auth/refresh') {
+      if (url.pathname === '/auth/login' || url.pathname === '/auth/register' || url.pathname === '/auth/refresh') {
         enforceRateLimit(request, {
           namespace: 'authentication',
           limit: Number.parseInt(process.env.AUTH_RATE_LIMIT_MAX ?? '10', 10),

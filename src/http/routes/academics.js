@@ -10,7 +10,7 @@ export function registerAcademicRoutes(router, { service }) {
         organizationId: body[organizationField] ?? null,
         permissions: ['academics.write']
       });
-      return Response.json(createResource(body, identity.actorId), { status: 201 });
+      return Response.json(await createResource(body, identity.actorId), { status: 201 });
     };
 
   const yearsHandlers = makeCrudHandlers({

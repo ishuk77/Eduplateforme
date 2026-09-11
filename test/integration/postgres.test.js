@@ -3,6 +3,7 @@ import test from 'node:test';
 import { newDb } from 'pg-mem';
 
 import { createPostgresConnection } from '../../src/db/connection.js';
+import { createHttpServer } from '../../src/http/server.js';
 import {
   initializePersistentEducationPlatformService
 } from '../../src/services/persistent-education-platform-service.js';
@@ -38,6 +39,7 @@ test('PostgreSQL migrations persist and reload application state', async () => {
     password: 'super-secret-password',
     organizationId: organization.id
   });
+
   assert.ok(firstLogin.accessToken);
   assert.deepEqual(await firstService.healthCheck(), {
     status: 'ok',
@@ -59,5 +61,66 @@ test('PostgreSQL migrations persist and reload application state', async () => {
     assert.equal(history.items[0].action, 'organization.create');
   } finally {
     await secondService.close();
+  }
+});
+
+test('PostgreSQL learner creation awaits commit and returns the created record', async () => {
+  const memoryDatabase = newDb({ noAstCoverageCheck: true });
+  const { Pool } = memoryDatabase.adapters.createPg();
+  const connection = await createPostgresConnection('postgresql://memory/learner-route', { Pool });
+  const service = await initializePersistentEducationPlatformService({ connection });
+  const server = createHttpServer({ foundation: service });
+
+  try {
+    const { account } = await service.registerUser({
+      givenName: 'Async',
+      familyName: 'Admin',
+      username: 'async-admin',
+      email: 'async@example.edu',
+      password: 'super-secret-password'
+    });
+    const onboarding = await service.onboardAccount(account.id, {
+      legalName: 'Async School',
+      displayName: 'Async',
+      internalReference: 'ASYNC-001',
+      countryCode: 'SN',
+      organizationType: 'school'
+    });
+    const authentication = await service.createAuthenticationSession(
+      account,
+      onboarding.organization.id
+    );
+
+    await new Promise((resolve) => server.listen(0, resolve));
+    const response = await fetch(
+      `http://127.0.0.1:${server.address().port}/academics/learners`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${authentication.accessToken}`,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          organizationId: onboarding.organization.id,
+          personId: onboarding.person.id,
+          learnerNumber: 'ASYNC-LRN-001'
+        })
+      }
+    );
+    assert.equal(response.status, 201);
+    const learner = await response.json();
+    assert.ok(learner.id);
+    assert.equal(learner.learnerNumber, 'ASYNC-LRN-001');
+    assert.equal(
+      (await service.repositories.learners.get(learner.id)).learnerNumber,
+      'ASYNC-LRN-001'
+    );
+  } finally {
+    if (server.listening) {
+      await new Promise((resolve, reject) =>
+        server.close((error) => error ? reject(error) : resolve())
+      );
+    }
+    await service.close();
   }
 });

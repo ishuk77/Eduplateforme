@@ -7,7 +7,9 @@ une base PostgreSQL managée. Le build exécute `npm ci`, le démarrage exécute
 ## Configuration
 
 1. Créer un Blueprint Render depuis ce dépôt.
-2. Définir `CORS_ORIGIN` avec l'origine HTTPS publique du frontend/service.
+2. Vérifier `CORS_ORIGIN`. Le Blueprint utilise
+   `https://eduplateforme-yrgs.onrender.com`; adaptez cette variable si le nom
+   du service change.
 3. Laisser Render injecter `DATABASE_URL` depuis `eduplateforme-db`.
 4. Conserver les valeurs générées par Render pour `JWT_SECRET` et
    `DATA_ENCRYPTION_KEY`; ne jamais les placer dans Git.
@@ -37,3 +39,7 @@ curl --fail https://VOTRE-SERVICE.onrender.com/health
 Une réponse `200` contient `status: "ok"` et le dialecte de base actif. Une
 base inaccessible produit `503` afin que Render ne considère pas l'instance
 comme saine.
+
+Après le déploiement, ouvrez l’URL publique et utilisez **Créer un compte**.
+L’onboarding crée la première organisation et le rôle administrateur associé;
+aucune initialisation manuelle de PostgreSQL n’est requise.

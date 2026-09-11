@@ -19,7 +19,7 @@ services:
       - key: DATA_ENCRYPTION_KEY
         generateValue: true
       - key: CORS_ORIGIN
-        sync: false
+        value: https://eduplateforme-yrgs.onrender.com
       - key: TRUST_PROXY
         value: "true"
       - key: AUTH_RATE_LIMIT_MAX
