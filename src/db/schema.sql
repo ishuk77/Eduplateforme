@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS people (
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  UNIQUE (id, organization_id),
   UNIQUE (organization_id, email),
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT
 );
@@ -30,10 +31,11 @@ CREATE TABLE IF NOT EXISTS user_accounts (
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  UNIQUE (id, organization_id),
   UNIQUE (organization_id, username),
   UNIQUE (person_id),
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT,
-  FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE RESTRICT
+  FOREIGN KEY (person_id, organization_id) REFERENCES people(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS roles (
@@ -45,6 +47,7 @@ CREATE TABLE IF NOT EXISTS roles (
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  UNIQUE (id, organization_id),
   UNIQUE (organization_id, role_key),
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT
 );
@@ -60,8 +63,8 @@ CREATE TABLE IF NOT EXISTS role_assignments (
   updated_at TEXT NOT NULL,
   UNIQUE (role_id, user_account_id),
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT,
-  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT,
-  FOREIGN KEY (user_account_id) REFERENCES user_accounts(id) ON DELETE RESTRICT
+  FOREIGN KEY (role_id, organization_id) REFERENCES roles(id, organization_id) ON DELETE RESTRICT,
+  FOREIGN KEY (user_account_id, organization_id) REFERENCES user_accounts(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS academic_years (
@@ -100,6 +103,7 @@ CREATE TABLE IF NOT EXISTS classes (
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  UNIQUE (id, organization_id),
   UNIQUE (organization_id, code),
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT,
   FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE RESTRICT,
@@ -119,8 +123,8 @@ CREATE TABLE IF NOT EXISTS enrollments (
   updated_at TEXT NOT NULL,
   UNIQUE (organization_id, class_id, person_id),
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT,
-  FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE RESTRICT,
-  FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE RESTRICT
+  FOREIGN KEY (class_id, organization_id) REFERENCES classes(id, organization_id) ON DELETE RESTRICT,
+  FOREIGN KEY (person_id, organization_id) REFERENCES people(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -134,8 +138,9 @@ CREATE TABLE IF NOT EXISTS documents (
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  UNIQUE (id, organization_id),
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT,
-  FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE SET NULL
+  FOREIGN KEY (person_id, organization_id) REFERENCES people(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS credentials (
@@ -151,8 +156,8 @@ CREATE TABLE IF NOT EXISTS credentials (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT,
-  FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE RESTRICT,
-  FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE SET NULL
+  FOREIGN KEY (person_id, organization_id) REFERENCES people(id, organization_id) ON DELETE RESTRICT,
+  FOREIGN KEY (document_id, organization_id) REFERENCES documents(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS audit_events (

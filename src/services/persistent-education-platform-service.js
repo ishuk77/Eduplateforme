@@ -19,231 +19,224 @@ export class PersistentEducationPlatformService {
   }
 
   registerOrganization({ name, code, actorId = null }) {
-    const organization = this.repositories.organizations.create({ name, code, archived_at: null });
-    this.#recordAudit({
-      organizationId: organization.id,
+    return this.#createWithAudit({
+      organizationIdForAudit: null,
       actorId,
       eventType: 'organization.created',
       entityType: 'organization',
-      entityId: organization.id,
-      payload: { name, code }
+      payload: { name, code },
+      create: () => this.repositories.organizations.create({ name, code, archived_at: null })
     });
-    return organization;
   }
 
   registerPerson({ organizationId, firstName, lastName, email, actorId = null }) {
-    const person = this.repositories.people.create({
-      organization_id: organizationId,
-      first_name: firstName,
-      last_name: lastName,
-      email,
-      archived_at: null
-    });
-
-    this.#recordAudit({
-      organizationId,
+    return this.#createWithAudit({
+      organizationIdForAudit: organizationId,
       actorId,
       eventType: 'person.created',
       entityType: 'person',
-      entityId: person.id,
-      payload: { firstName, lastName, email }
+      payload: { firstName, lastName, email },
+      create: () =>
+        this.repositories.people.create({
+          organization_id: organizationId,
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          archived_at: null
+        })
     });
-    return person;
   }
 
   openUserAccount({ organizationId, personId, username, passwordHash, status = 'active', actorId = null }) {
-    const account = this.repositories.userAccounts.create({
-      organization_id: organizationId,
-      person_id: personId,
-      username,
-      password_hash: passwordHash,
-      status,
-      archived_at: null
-    });
-
-    this.#recordAudit({
-      organizationId,
+    return this.#createWithAudit({
+      organizationIdForAudit: organizationId,
       actorId,
       eventType: 'user_account.opened',
       entityType: 'user_account',
-      entityId: account.id,
-      payload: { personId, username, status }
+      payload: { personId, username, status },
+      create: () =>
+        this.repositories.userAccounts.create({
+          organization_id: organizationId,
+          person_id: personId,
+          username,
+          password_hash: passwordHash,
+          status,
+          archived_at: null
+        })
     });
-    return account;
   }
 
   createRole({ organizationId, roleKey, name, description = null, actorId = null }) {
-    const role = this.repositories.roles.create({
-      organization_id: organizationId,
-      role_key: roleKey,
-      name,
-      description,
-      archived_at: null
-    });
-
-    this.#recordAudit({
-      organizationId,
+    return this.#createWithAudit({
+      organizationIdForAudit: organizationId,
       actorId,
       eventType: 'role.created',
       entityType: 'role',
-      entityId: role.id,
-      payload: { roleKey, name }
+      payload: { roleKey, name },
+      create: () =>
+        this.repositories.roles.create({
+          organization_id: organizationId,
+          role_key: roleKey,
+          name,
+          description,
+          archived_at: null
+        })
     });
-    return role;
   }
 
   assignRole({ organizationId, roleId, userAccountId, actorId = null }) {
-    const assignedAt = new Date().toISOString();
-    const assignment = this.repositories.roleAssignments.create({
-      organization_id: organizationId,
-      role_id: roleId,
-      user_account_id: userAccountId,
-      assigned_at: assignedAt,
-      revoked_at: null
-    });
-
-    this.#recordAudit({
-      organizationId,
+    return this.#createWithAudit({
+      organizationIdForAudit: organizationId,
       actorId,
       eventType: 'role.assigned',
       entityType: 'role_assignment',
-      entityId: assignment.id,
-      payload: { roleId, userAccountId }
+      payload: { roleId, userAccountId },
+      create: () =>
+        this.repositories.roleAssignments.create({
+          organization_id: organizationId,
+          role_id: roleId,
+          user_account_id: userAccountId,
+          assigned_at: new Date().toISOString(),
+          revoked_at: null
+        })
     });
-    return assignment;
   }
 
   createAcademicYear({ organizationId, name, startDate, endDate, isActive = false, actorId = null }) {
-    const academicYear = this.repositories.academicYears.create({
-      organization_id: organizationId,
-      name,
-      start_date: startDate,
-      end_date: endDate,
-      is_active: isActive ? 1 : 0,
-      archived_at: null
-    });
-
-    this.#recordAudit({
-      organizationId,
+    return this.#createWithAudit({
+      organizationIdForAudit: organizationId,
       actorId,
       eventType: 'academic_year.created',
       entityType: 'academic_year',
-      entityId: academicYear.id,
-      payload: { name, startDate, endDate, isActive }
+      payload: { name, startDate, endDate, isActive },
+      create: () =>
+        this.repositories.academicYears.create({
+          organization_id: organizationId,
+          name,
+          start_date: startDate,
+          end_date: endDate,
+          is_active: isActive ? 1 : 0,
+          archived_at: null
+        })
     });
-    return academicYear;
   }
 
   createProgram({ organizationId, name, code, actorId = null }) {
-    const program = this.repositories.programs.create({
-      organization_id: organizationId,
-      name,
-      code,
-      archived_at: null
-    });
-
-    this.#recordAudit({
-      organizationId,
+    return this.#createWithAudit({
+      organizationIdForAudit: organizationId,
       actorId,
       eventType: 'program.created',
       entityType: 'program',
-      entityId: program.id,
-      payload: { name, code }
+      payload: { name, code },
+      create: () =>
+        this.repositories.programs.create({
+          organization_id: organizationId,
+          name,
+          code,
+          archived_at: null
+        })
     });
-    return program;
   }
 
   createClass({ organizationId, academicYearId, programId = null, name, code, actorId = null }) {
-    const schoolClass = this.repositories.classes.create({
-      organization_id: organizationId,
-      academic_year_id: academicYearId,
-      program_id: programId,
-      name,
-      code,
-      archived_at: null
-    });
-
-    this.#recordAudit({
-      organizationId,
+    return this.#createWithAudit({
+      organizationIdForAudit: organizationId,
       actorId,
       eventType: 'class.created',
       entityType: 'class',
-      entityId: schoolClass.id,
-      payload: { academicYearId, programId, name, code }
+      payload: { academicYearId, programId, name, code },
+      create: () =>
+        this.repositories.classes.create({
+          organization_id: organizationId,
+          academic_year_id: academicYearId,
+          program_id: programId,
+          name,
+          code,
+          archived_at: null
+        })
     });
-    return schoolClass;
   }
 
   enrollPerson({ organizationId, classId, personId, status = 'active', actorId = null }) {
-    const enrolledAt = new Date().toISOString();
-    const enrollment = this.repositories.enrollments.create({
-      organization_id: organizationId,
-      class_id: classId,
-      person_id: personId,
-      status,
-      enrolled_at: enrolledAt,
-      withdrawn_at: null,
-      archived_at: null
-    });
-
-    this.#recordAudit({
-      organizationId,
+    return this.#createWithAudit({
+      organizationIdForAudit: organizationId,
       actorId,
       eventType: 'enrollment.created',
       entityType: 'enrollment',
-      entityId: enrollment.id,
-      payload: { classId, personId, status }
+      payload: { classId, personId, status },
+      create: () =>
+        this.repositories.enrollments.create({
+          organization_id: organizationId,
+          class_id: classId,
+          person_id: personId,
+          status,
+          enrolled_at: new Date().toISOString(),
+          withdrawn_at: null,
+          archived_at: null
+        })
     });
-    return enrollment;
   }
 
   registerDocument({ organizationId, personId = null, kind, title, uri, issuedAt = null, actorId = null }) {
-    const document = this.repositories.documents.create({
-      organization_id: organizationId,
-      person_id: personId,
-      kind,
-      title,
-      uri,
-      issued_at: issuedAt,
-      archived_at: null
-    });
-
-    this.#recordAudit({
-      organizationId,
+    return this.#createWithAudit({
+      organizationIdForAudit: organizationId,
       actorId,
       eventType: 'document.registered',
       entityType: 'document',
-      entityId: document.id,
-      payload: { personId, kind, title }
+      payload: { personId, kind, title },
+      create: () =>
+        this.repositories.documents.create({
+          organization_id: organizationId,
+          person_id: personId,
+          kind,
+          title,
+          uri,
+          issued_at: issuedAt,
+          archived_at: null
+        })
     });
-    return document;
   }
 
   registerCredential({ organizationId, personId, documentId = null, kind, issuedAt, expiresAt = null, status = 'active', actorId = null }) {
-    const credential = this.repositories.credentials.create({
-      organization_id: organizationId,
-      person_id: personId,
-      document_id: documentId,
-      kind,
-      issued_at: issuedAt,
-      expires_at: expiresAt,
-      status,
-      archived_at: null
-    });
-
-    this.#recordAudit({
-      organizationId,
+    return this.#createWithAudit({
+      organizationIdForAudit: organizationId,
       actorId,
       eventType: 'credential.registered',
       entityType: 'credential',
-      entityId: credential.id,
-      payload: { personId, documentId, kind, issuedAt, expiresAt, status }
+      payload: { personId, documentId, kind, issuedAt, expiresAt, status },
+      create: () =>
+        this.repositories.credentials.create({
+          organization_id: organizationId,
+          person_id: personId,
+          document_id: documentId,
+          kind,
+          issued_at: issuedAt,
+          expires_at: expiresAt,
+          status,
+          archived_at: null
+        })
     });
-    return credential;
   }
 
   listAuditEvents() {
     return this.repositories.auditEvents.list();
+  }
+
+  #createWithAudit({ organizationIdForAudit, actorId, eventType, entityType, payload, create }) {
+    const transaction = this.db.transaction(() => {
+      const entity = create();
+      this.#recordAudit({
+        organizationId: organizationIdForAudit ?? entity.organization_id ?? entity.id,
+        actorId,
+        eventType,
+        entityType,
+        entityId: entity.id,
+        payload
+      });
+      return entity;
+    });
+
+    return transaction();
   }
 
   #recordAudit({ organizationId, actorId, eventType, entityType, entityId, payload }) {

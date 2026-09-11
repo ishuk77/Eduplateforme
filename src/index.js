@@ -24,7 +24,7 @@ function shutdown() {
       shutdown.serviceClosed = true;
       service.close();
     }
-    process.exit(0);
+    process.exitCode = 0;
   };
 
   if (server.listening) {

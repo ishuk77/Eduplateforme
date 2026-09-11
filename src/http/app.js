@@ -85,15 +85,19 @@ export function parseJsonBody(req, maxBodyBytes = 1024 * 1024) {
 }
 
 function mapHttpError(error) {
-  if (error.message === 'REQUEST_TOO_LARGE') {
+  if (error?.message === 'REQUEST_TOO_LARGE') {
     return { statusCode: 413, code: 'REQUEST_TOO_LARGE' };
   }
 
-  if (error.message === 'INVALID_JSON') {
+  if (error?.message === 'INVALID_JSON') {
     return { statusCode: 400, code: 'INVALID_JSON' };
   }
 
-  if (error.message.includes('missing required field')) {
+  if (error?.message === 'REQUEST_READ_ERROR') {
+    return { statusCode: 400, code: 'REQUEST_READ_ERROR' };
+  }
+
+  if (error?.message?.includes('missing required field')) {
     return { statusCode: 400, code: 'VALIDATION_ERROR' };
   }
 
@@ -101,7 +105,7 @@ function mapHttpError(error) {
     return { statusCode: 409, code: 'CONFLICT' };
   }
 
-  return { statusCode: 400, code: 'BAD_REQUEST' };
+  return { statusCode: 500, code: 'INTERNAL_ERROR' };
 }
 
 export function createAppHandler(service, options = {}) {
@@ -124,8 +128,8 @@ export function createAppHandler(service, options = {}) {
         sendJson(res, 201, { organization });
       } catch (error) {
         const mapped = mapHttpError(error);
-        if (mapped.code === 'BAD_REQUEST') {
-          console.error(error);
+        if (mapped.code === 'INTERNAL_ERROR') {
+          console.error(`Unhandled error on ${req.method} ${req.url}: ${error.name}`);
         }
         sendJson(res, mapped.statusCode, { error: mapped.code });
       }
