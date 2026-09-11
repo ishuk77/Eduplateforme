@@ -5,7 +5,8 @@ const state = {
   locale: window.localStorage.getItem('eduplateforme.locale')
     ?? (navigator.language.toLowerCase().startsWith('en') ? 'en' : 'fr'),
   resources: new Map(),
-  references: new Map()
+  references: new Map(),
+  offlineQueue: JSON.parse(window.localStorage.getItem('eduplateforme.offlineQueue') ?? '[]')
 };
 
 const translations = {
@@ -610,6 +611,69 @@ const modules = [
     ]
   },
   {
+    id: 'analytics',
+    path: '/analytics',
+    label: 'Analytics',
+    eyebrow: 'Pilotage confidentiel',
+    description: 'Configurez les méthodes de calcul et seuils de confidentialité des indicateurs.',
+    resources: [{
+      id: 'analyticsConfigurations', title: 'Configurations analytiques', path: '/analytics/configurations',
+      read: 'analytics.read', write: 'analytics.write',
+      fields: [['privacyMinimum', 'Taille minimale de cohorte', 'number', true], ['calculationMethods', 'Méthodes de calcul (JSON)', 'json', false], ['allowedDimensions', 'Dimensions autorisées (JSON)', 'json', false]],
+      columns: ['privacyMinimum', 'calculationMethods', 'allowedDimensions', 'updatedAt']
+    }]
+  },
+  {
+    id: 'support',
+    path: '/support',
+    label: 'Aide & support',
+    eyebrow: 'Centre de service',
+    description: 'FAQ, guides et tickets suivis de L1 à L4 avec historique.',
+    resources: [{
+      id: 'supportTickets', title: 'Tickets', path: '/support/tickets',
+      read: 'support.read', write: 'support.write',
+      fields: [['subject', 'Sujet', 'text', true], ['description', 'Description', 'textarea', true], ['priority', 'Priorité', 'select', true, ['low', 'normal', 'high', 'urgent']], ['supportLevel', 'Niveau', 'select', true, ['L1', 'L2', 'L3', 'L4']], ['ticketState', 'Statut', 'select', true, ['open', 'in_progress', 'waiting', 'resolved', 'closed']]],
+      columns: ['subject', 'priority', 'supportLevel', 'ticketState', 'comments', 'updatedAt'],
+      action: { label: 'Ajouter un commentaire', path: '/support/tickets/:id/comments', fields: [['message', 'Commentaire', 'text', true], ['ticketState', 'Statut', 'select', false, ['open', 'in_progress', 'waiting', 'resolved', 'closed']], ['supportLevel', 'Niveau', 'select', false, ['L1', 'L2', 'L3', 'L4']]] }
+    }]
+  },
+  {
+    id: 'saas',
+    path: '/saas',
+    label: 'Plans & quotas',
+    eyebrow: 'SaaS',
+    description: 'Gérez les fonctionnalités, quotas, essais, renouvellements et suspensions sans simuler de facturation.',
+    resources: [
+      { id: 'saasPlans', title: 'Plans', path: '/saas/plans', read: 'saas.read', write: 'saas.write', fields: [['code', 'Code', 'text', true], ['features', 'Fonctionnalités (JSON)', 'json', true], ['userQuota', 'Quota utilisateurs', 'number', true], ['storageQuotaBytes', 'Quota stockage (octets)', 'number', true]], columns: ['code', 'features', 'userQuota', 'storageQuotaBytes'] },
+      { id: 'tenantSubscriptions', title: 'Abonnements tenant', path: '/saas/subscriptions', read: 'saas.read', write: 'saas.write', fields: [['planId', 'Plan', 'reference', true, '/saas/plans', 'code'], ['subscriptionState', 'Statut', 'select', true, ['trial', 'active', 'renewal_due', 'suspended', 'ended']], ['trialEndsAt', 'Fin essai', 'datetime-local', false], ['renewsAt', 'Renouvellement', 'datetime-local', false]], columns: ['planId', 'subscriptionState', 'trialEndsAt', 'renewsAt'] }
+    ]
+  },
+  {
+    id: 'operations',
+    path: '/operations',
+    label: 'Exploitation',
+    eyebrow: 'Résilience',
+    description: 'Suivez sauvegardes, restauration, intégrité, RPO/RTO et incidents réels.',
+    resources: [
+      { id: 'backupConfigurations', title: 'Configuration sauvegarde/PRA', path: '/operations/backup-configurations', read: 'operations.read', write: 'operations.write', fields: [['providerKey', 'Fournisseur configuré côté serveur', 'text', false], ['schedule', 'Planification', 'text', true], ['retentionDays', 'Rétention (jours)', 'number', true], ['rpoHours', 'RPO (heures)', 'number', true], ['rtoHours', 'RTO (heures)', 'number', true]], columns: ['providerKey', 'schedule', 'retentionDays', 'rpoHours', 'rtoHours', 'updatedAt'] },
+      { id: 'backupOperations', title: 'Registre sauvegarde/PRA', path: '/operations/backups', createPath: '/operations/backups/request', read: 'operations.read', write: 'operations.write', fields: [['operationType', 'Opération', 'select', true, ['backup', 'restore', 'integrity_test']], ['rpoHours', 'RPO (heures)', 'number', true], ['rtoHours', 'RTO (heures)', 'number', true]], columns: ['operationType', 'operationState', 'integrityState', 'rpoHours', 'rtoHours', 'updatedAt'] },
+      { id: 'incidents', title: 'Incidents', path: '/operations/incidents', read: 'operations.read', write: 'operations.write', fields: [['title', 'Titre', 'text', true], ['severity', 'Sévérité', 'select', true, ['low', 'medium', 'high', 'critical']], ['incidentState', 'Statut', 'select', true, ['open', 'monitoring', 'resolved']], ['publicMessage', 'Message de service', 'textarea', false]], columns: ['title', 'severity', 'incidentState', 'publicMessage', 'updatedAt'] }
+    ]
+  },
+  {
+    id: 'ai',
+    path: '/ai',
+    label: 'Assistance IA',
+    eyebrow: 'Humain responsable',
+    description: 'Demandes assistives consenties, désactivées sans fournisseur et sans décision autonome à fort impact.',
+    resources: [{
+      id: 'aiAssistanceRequests', title: 'Demandes', path: '/ai/requests',
+      createPath: '/ai/assist', read: 'ai-assistance.read', write: 'ai-assistance.write',
+      fields: [['requestedAction', 'Type d’assistance', 'select', true, ['summarize', 'translate', 'draft', 'explain']], ['prompt', 'Demande', 'textarea', true], ['consent', 'Consentement explicite', 'checkbox', true]],
+      columns: ['requestedAction', 'assistanceState', 'providerConfigured', 'decisionAuthority', 'updatedAt']
+    }]
+  },
+  {
     id: 'audit',
     path: '/audit',
     label: 'Audit',
@@ -676,6 +740,57 @@ async function apiRequest(path, options = {}, retry = true) {
   return payload;
 }
 
+function persistOfflineQueue() {
+  window.localStorage.setItem('eduplateforme.offlineQueue', JSON.stringify(state.offlineQueue));
+}
+
+function queueOfflineMutation(resource, action, entityId, payload, expectedUpdatedAt = null) {
+  if (!['supportTickets', 'lmsProgress'].includes(resource)) return false;
+  state.offlineQueue.push({
+    idempotencyKey: crypto.randomUUID(),
+    resource,
+    action,
+    entityId,
+    payload,
+    expectedUpdatedAt
+  });
+  persistOfflineQueue();
+  return true;
+}
+
+async function synchronizeOfflineQueue() {
+  if (!navigator.onLine || !state.token || !state.user?.organizationId || state.offlineQueue.length === 0) return;
+  const pending = [...state.offlineQueue];
+  const result = await apiRequest('/offline/synchronize', {
+    method: 'POST',
+    body: JSON.stringify({ organizationId: state.user.organizationId, mutations: pending })
+  });
+  const retained = new Set(
+    result.results.filter((item) => ['conflict', 'requires_online_confirmation'].includes(item.state))
+      .map((item) => item.idempotencyKey)
+  );
+  state.offlineQueue = pending.filter((item) => retained.has(item.idempotencyKey));
+  persistOfflineQueue();
+}
+
+async function downloadAnalytics(format) {
+  const query = new URLSearchParams(window.location.search);
+  query.set('format', format);
+  const request = () => fetch(`/analytics/export?${query}`, {
+    credentials: 'same-origin',
+    headers: { authorization: ['Bearer', state.token].join(' ') }
+  });
+  let response = await request();
+  if (response.status === 401 && await refreshSession()) response = await request();
+  if (!response.ok) throw new Error(`Export impossible (${response.status}).`);
+  const blobUrl = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = `analytics.${format}`;
+  link.click();
+  URL.revokeObjectURL(blobUrl);
+}
+
 function can(permission) {
   return !permission || state.user?.permissions?.includes('*') || state.user?.permissions?.includes(permission);
 }
@@ -692,7 +807,7 @@ function notification(message, type = 'success') {
 function authForm(kind) {
   const registration = kind === 'register';
   return `
-    <main class="public-layout">
+    <main class="public-layout" id="main-content">
       <a class="brand-mark public-brand" href="/">Eduplateforme</a>
       <section class="auth-card surface-card">
         <p class="section-label">${registration ? 'Créer un compte' : 'Bon retour'}</p>
@@ -716,7 +831,7 @@ function authForm(kind) {
 
 function landing() {
   return `
-    <main class="landing">
+    <main class="landing" id="main-content">
       <header class="public-header">
         <a class="brand-mark" href="/">Eduplateforme</a>
         <nav aria-label="Accès au compte">
@@ -751,7 +866,7 @@ function landing() {
 
 function onboarding() {
   return `
-    <main class="public-layout">
+    <main class="public-layout" id="main-content">
       <a class="brand-mark public-brand" href="/">Eduplateforme</a>
       <section class="auth-card surface-card">
         <p class="section-label">Dernière étape</p>
@@ -787,7 +902,7 @@ function shell(content, activeId = 'dashboard') {
         <p class="tenant-name">${escapeHtml(profile ? `${profile.givenName} ${profile.familyName}` : state.user?.username)}</p>
         <nav class="nav-links">
           <a class="nav-link ${activeId === 'dashboard' ? 'is-active' : ''}" href="/dashboard"><span>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' })}</span><small>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' }, 1)}</small></a>
-          ${modules.map((module) => `<a class="nav-link ${activeId === module.id ? 'is-active' : ''}" href="${module.path}"><span>${moduleLabel(module)}</span><small>${moduleLabel(module, 1)}</small></a>`).join('')}
+          ${modules.filter((module) => module.resources.some((resource) => can(resource.read))).map((module) => `<a class="nav-link ${activeId === module.id ? 'is-active' : ''}" href="${module.path}"><span>${moduleLabel(module)}</span><small>${moduleLabel(module, 1)}</small></a>`).join('')}
         </nav>
         <button id="logout" class="logout-button" type="button">${t('logout')}</button>
       </aside>
@@ -796,6 +911,7 @@ function shell(content, activeId = 'dashboard') {
         <header class="topbar">
           <button class="menu-toggle" id="menu-toggle" type="button" aria-controls="shell-nav" aria-expanded="false">Menu</button>
           <label><span class="sr-only">Language</span><select id="locale-switch" aria-label="Language"><option value="fr" ${state.locale === 'fr' ? 'selected' : ''}>FR</option><option value="en" ${state.locale === 'en' ? 'selected' : ''}>EN</option></select></label>
+          <span id="sync-status" class="sync-status" role="status">${navigator.onLine ? 'En ligne' : 'Hors ligne'} · ${state.offlineQueue.length} en attente</span>
           <span class="organization-chip">${escapeHtml(state.user?.organizationId ? t('activeOrganization') : 'Configuration requise')}</span>
         </header>
         <div id="feedback" class="feedback global-feedback" role="alert" tabindex="-1" hidden></div>
@@ -871,7 +987,7 @@ async function loadReferences(module) {
 }
 
 async function modulePage(module) {
-  app.innerHTML = shell(`<main class="content-stack"><section class="page-heading"><p class="section-label">${moduleLabel(module, 1)}</p><h1>${moduleLabel(module)}</h1><p>${module.description}</p></section><section class="surface-card loading-card">${t('loading')}</section></main>`, module.id);
+  app.innerHTML = shell(`<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">${moduleLabel(module, 1)}</p><h1>${moduleLabel(module)}</h1><p>${module.description}</p></section><section class="surface-card loading-card">${t('loading')}</section></main>`, module.id);
   bindShell();
   try {
     await loadReferences(module);
@@ -882,9 +998,52 @@ async function modulePage(module) {
         state.resources.set(resource.id, { items: [], page: { total: 0 } });
       }
     }));
-    app.innerHTML = shell(`<main class="content-stack"><section class="page-heading"><p class="section-label">${moduleLabel(module, 1)}</p><h1>${moduleLabel(module)}</h1><p>${module.description}</p></section>${module.resources.map(resourceSection).join('')}</main>`, module.id);
+    let supplement = '';
+    if (module.id === 'analytics' && can('analytics.read')) {
+      const query = window.location.search;
+      const report = await apiRequest(`/analytics${query}`);
+      const selected = new URLSearchParams(query);
+      supplement = `
+        <section class="surface-card resource-section">
+          <div class="section-header"><div><p class="section-label">Indicateurs calculés</p><h2>Palmarès confidentiel</h2></div>
+            ${can('analytics.export') ? '<div class="form-actions"><button class="secondary-button" type="button" data-analytics-export="csv">CSV</button><button class="secondary-button" type="button" data-analytics-export="json">JSON</button></div>' : ''}
+          </div>
+          <form class="form-grid" action="/analytics" method="get">
+            <label>Période (début,fin)<input name="period" value="${escapeHtml(selected.get('period') ?? '')}" placeholder="2026-09-01,2027-06-30"></label>
+            <label>Niveau<input name="levelCode" value="${escapeHtml(selected.get('levelCode') ?? '')}"></label>
+            <label>Classe<input name="classId" value="${escapeHtml(selected.get('classId') ?? '')}"></label>
+            <label>Programme<input name="programId" value="${escapeHtml(selected.get('programId') ?? '')}"></label>
+            <label>Site<input name="campusId" value="${escapeHtml(selected.get('campusId') ?? '')}"></label>
+            <label>Matière<input name="subjectId" value="${escapeHtml(selected.get('subjectId') ?? '')}"></label>
+            <button class="primary-button" type="submit">Appliquer les filtres</button>
+          </form>
+          <p>${report.privacy.suppressed ? 'Valeurs masquées : cohorte sous le seuil de confidentialité.' : 'Valeurs calculées sur les données tenant disponibles.'}</p>
+          <div class="metric-grid">${Object.entries(report.metrics).map(([metric, value]) => `<article class="metric-card"><span>${escapeHtml(metric)}</span><strong>${value ?? '—'}</strong></article>`).join('')}</div>
+        </section>`;
+    }
+    if (module.id === 'support') {
+      supplement = `
+        <section class="surface-card resource-section"><p class="section-label">Centre d’aide</p><h2>FAQ et guides</h2>
+          <details><summary>Premiers pas</summary><p>Créez les personnes, l’année, le programme et la classe avant l’inscription.</p></details>
+          <details><summary>Connexion faible</summary><p>Les brouillons autorisés sont mis en file; notes et documents officiels exigent une connexion.</p></details>
+          <details><summary>Escalade</summary><p>L1 traite l’usage, L2 la configuration, L3 l’application et L4 les fournisseurs.</p></details>
+        </section>`;
+    }
+    app.innerHTML = shell(`<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">${moduleLabel(module, 1)}</p><h1>${moduleLabel(module)}</h1><p>${module.description}</p></section>${supplement}${module.resources.map(resourceSection).join('')}</main>`, module.id);
     bindShell();
     bindResources(module);
+    document.querySelectorAll('[data-analytics-export]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          await downloadAnalytics(button.dataset.analyticsExport);
+        } catch (error) {
+          notification(error.message, 'error');
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
   } catch (error) {
     notification(error.message, 'error');
   }
@@ -893,25 +1052,19 @@ async function modulePage(module) {
 async function dashboard() {
   app.innerHTML = shell('<main class="content-stack"><section class="page-heading"><p class="section-label">Pilotage</p><h1>Tableau de bord</h1><p>Chargement des indicateurs de votre établissement…</p></section></main>');
   bindShell();
-  const indicators = [
-    ['Personnes', '/people', 'people.read', '/people'],
-    ['Apprenants', '/academics/learners', 'academics.read', '/academics'],
-    ['Inscriptions', '/academics/enrollments', 'academics.read', '/academics'],
-    ['Événements', '/calendar/events', 'calendar.read', '/calendar'],
-    ['Documents', '/documents', 'documents.read', '/documents'],
-    ['Messages', '/communications/messages', 'communications.read', '/communications']
-  ];
   try {
-    const values = await Promise.all(indicators.map(async ([label, path, permission, link]) => {
-      if (!can(permission)) return [label, null, link];
-      const payload = await apiRequest(`${path}?limit=1`);
-      return [label, payload.page.total, link];
-    }));
+    const roleDashboard = await apiRequest('/dashboards/me');
+    const labels = {
+      headcount: 'Effectifs', enrollments: 'Inscriptions', attendanceRate: 'Assiduité',
+      resultAverage: 'Résultats', progressionAverage: 'Progression',
+      financeCollected: 'Finances', lmsActivityCount: 'Activité LMS',
+      dataQualityScore: 'Qualité'
+    };
     app.innerHTML = shell(`
-      <main class="content-stack">
-        <section class="page-heading"><p class="section-label">Pilotage</p><h1>Tableau de bord</h1><p>Les compteurs proviennent directement des API de votre organisation.</p></section>
-        <section class="metric-grid">${values.map(([label, value, link]) => `<a class="metric-card surface-card" href="${link}"><span>${label}</span><strong>${value ?? '—'}</strong><small>${value === 0 ? 'Commencer' : 'Voir les données'}</small></a>`).join('')}</section>
-        <section class="surface-card quick-start"><h2>Parcours conseillé</h2><p>Ajoutez d’abord des personnes, puis une année scolaire, un programme, une classe et une inscription.</p><a class="primary-button" href="/academics">Configurer la scolarité</a></section>
+      <main class="content-stack" id="main-content">
+        <section class="page-heading"><p class="section-label">Pilotage · ${escapeHtml(roleDashboard.role)}</p><h1>Tableau de bord</h1><p>Chaque carte dépend du rôle, des permissions et des données réellement disponibles.</p></section>
+        <section class="metric-grid">${roleDashboard.cards.map(({ metric, value }) => `<article class="metric-card surface-card"><span>${labels[metric] ?? metric}</span><strong>${value ?? '—'}</strong><small>${value == null ? 'Non disponible ou masqué' : 'Donnée tenant calculée'}</small></article>`).join('') || '<p class="empty-state">Aucun indicateur autorisé.</p>'}</section>
+        <section class="surface-card quick-start"><h2>Modules autorisés</h2><p>${roleDashboard.availableModules.map(escapeHtml).join(' · ') || 'Aucun module opérationnel supplémentaire.'}</p></section>
       </main>`);
     bindShell();
   } catch (error) {
@@ -930,6 +1083,12 @@ function bindShell() {
   };
   toggle?.addEventListener('click', () => setOpen(navigation?.getAttribute('data-open') !== 'true'));
   backdrop?.addEventListener('click', () => setOpen(false));
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      setOpen(false);
+      toggle?.focus();
+    }
+  }, { once: true });
   document.querySelector('#locale-switch')?.addEventListener('change', (event) => {
     state.locale = event.target.value;
     window.localStorage.setItem('eduplateforme.locale', state.locale);
@@ -954,12 +1113,14 @@ function bindResources(module) {
       event.preventDefault();
       const resource = byId.get(form.dataset.resource);
       const button = form.querySelector('button[type="submit"]');
+      let body = null;
+      let recordId = null;
       button.disabled = true;
       button.textContent = 'Enregistrement…';
       try {
         const formData = new FormData(form);
-        const recordId = formData.get('_recordId');
-        const body = Object.fromEntries(resource.fields.map(([name, , type]) => {
+        recordId = formData.get('_recordId');
+        body = Object.fromEntries(resource.fields.map(([name, , type]) => {
           const value = formData.get(name);
           if (type === 'json' && value) return [name, JSON.parse(value)];
           if (type === 'number' && value !== '') return [name, Number(value)];
@@ -974,6 +1135,12 @@ function bindResources(module) {
         notification(recordId ? 'Modification enregistrée.' : 'Élément créé.');
         await modulePage(module);
       } catch (error) {
+        if (!navigator.onLine && body && queueOfflineMutation(resource.id, 'create', null, body)) {
+          notification('Modification placée dans la file hors ligne.');
+          button.disabled = false;
+          button.textContent = 'Enregistrer';
+          return;
+        }
         notification(error.message, 'error');
         button.disabled = false;
         button.textContent = 'Enregistrer';
@@ -1008,6 +1175,17 @@ function bindResources(module) {
         notification(`${actionLabel} : opération enregistrée.`);
         await modulePage(module);
       } catch (error) {
+        if (!navigator.onLine && queueOfflineMutation(
+          resource.id,
+          resource.id === 'supportTickets' ? 'comment' : 'upsert',
+          record.id,
+          body,
+          record.updatedAt
+        )) {
+          notification('Modification placée dans la file hors ligne.');
+          button.disabled = false;
+          return;
+        }
         notification(error.message, 'error');
         button.disabled = false;
       }
@@ -1186,6 +1364,22 @@ async function route() {
     document.querySelector('#auth-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
+      if (form.dataset.challengeToken) {
+        try {
+          const challenge = await apiRequest('/auth/mfa/challenge', {
+            method: 'POST',
+            body: JSON.stringify({
+              challengeToken: form.dataset.challengeToken,
+              code: new FormData(form).get('code')
+            })
+          }, false);
+          setToken(challenge.accessToken);
+          window.location.assign('/dashboard');
+        } catch (error) {
+          notification(error.message, 'error');
+        }
+        return;
+      }
       const body = Object.fromEntries(
         [...new FormData(form).entries()].filter(([, value]) => value !== '')
       );
@@ -1194,6 +1388,15 @@ async function route() {
       button.textContent = 'Chargement…';
       try {
         const payload = await apiRequest(`/auth/${kind}`, { method: 'POST', body: JSON.stringify(body) }, false);
+        if (payload.mfaRequired) {
+          form.dataset.challengeToken = payload.challengeToken;
+          form.innerHTML = `
+            <label class="form-wide">Code MFA ou code de récupération
+              <input name="code" inputmode="numeric" autocomplete="one-time-code" required>
+            </label>
+            <button class="primary-button" type="submit">Valider le second facteur</button>`;
+          return;
+        }
         setToken(payload.accessToken);
         state.user = payload.user;
         window.location.assign(kind === 'register' ? '/onboarding' : '/dashboard');
@@ -1243,4 +1446,10 @@ async function route() {
   }
 }
 
+window.addEventListener('online', () => synchronizeOfflineQueue().then(() => route()).catch(() => {}));
+window.addEventListener('offline', () => route());
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+}
 await route();
+await synchronizeOfflineQueue().catch(() => {});

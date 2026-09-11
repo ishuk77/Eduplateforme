@@ -43,6 +43,14 @@ export function registerAuthRoutes(router, { service }) {
     return withRefreshCookie(await service.authenticate(body));
   });
 
+  router.add('POST', '/auth/mfa/challenge', async (request) => {
+    const body = await parseJson(request);
+    if (!body.challengeToken || !body.code) {
+      throw new ApiError('INVALID_INPUT', 'challengeToken and code are required.', 400);
+    }
+    return withRefreshCookie(await service.completeMfaChallenge(body.challengeToken, body.code));
+  });
+
   router.add('POST', '/auth/register', async (request) => {
     const body = await parseJson(request, registrationSchema);
     const { account } = await service.registerUser(body);
@@ -89,5 +97,33 @@ export function registerAuthRoutes(router, { service }) {
   router.add('GET', '/auth/validate', async (request) => {
     const identity = requireIdentity(request, service);
     return Response.json({ authenticated: true, actorId: identity.actorId, organizationId: identity.organizationId });
+  });
+
+  router.add('POST', '/auth/mfa/enroll', async (request) => {
+    const identity = requireIdentity(request, service);
+    const body = await parseJson(request);
+    return Response.json(await service.enrollMfa(identity.accountId, body.currentCode), { status: 201 });
+  });
+
+  router.add('POST', '/auth/mfa/confirm', async (request) => {
+    const identity = requireIdentity(request, service);
+    const body = await parseJson(request);
+    return Response.json(await service.confirmMfa(identity.accountId, body.code));
+  });
+
+  router.add('DELETE', '/auth/mfa', async (request) => {
+    const identity = requireIdentity(request, service);
+    const body = await parseJson(request);
+    return Response.json(await service.disableMfa(identity.accountId, body.code));
+  });
+
+  router.add('GET', '/auth/sessions', async (request) => {
+    const identity = requireIdentity(request, service);
+    return Response.json({ items: await service.listSessions(identity.accountId) });
+  });
+
+  router.add('DELETE', '/auth/sessions/:id', async (request, _url, params) => {
+    const identity = requireIdentity(request, service);
+    return Response.json(await service.revokeSession(identity.accountId, params.id));
   });
 }

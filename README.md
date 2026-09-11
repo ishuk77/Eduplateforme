@@ -1,5 +1,7 @@
 # Eduplateforme
 
+La documentation de spécification, l’audit des 57 sections et les limites d’intégration sont versionnés dans [`docs/specification/`](docs/specification/57-section-coverage.md).
+
 Eduplateforme is a compact, production-oriented foundation for an international, multi-tenant education platform.
 
 ## Current implementation status
