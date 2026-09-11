@@ -91,8 +91,31 @@ test('serves foundation api metadata alongside the shell', async () => {
     const meta = await metaResponse.json();
 
     assert.equal(metaResponse.status, 200);
-    assert.equal(meta.scope, 'extended-foundation');
+    assert.equal(meta.scope, 'full-specification-foundation');
     assert.ok(Array.isArray(meta.invariants));
     assert.match(meta.invariants.join(' '), /learner_id != enrollment_id/);
+  });
+});
+
+test('forwards non-shell requests to the API application', async () => {
+  await withServer(async (baseUrl) => {
+    const createOrganizationResponse = await fetch(`${baseUrl}/organizations`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-actor-id': 'account-admin'
+      },
+      body: JSON.stringify({
+        legalName: 'Lycée Horizon',
+        displayName: 'Horizon',
+        internalReference: 'ORG-001',
+        countryCode: 'SN'
+      })
+    });
+
+    assert.equal(createOrganizationResponse.status, 201);
+    const organization = await createOrganizationResponse.json();
+    assert.equal(organization.displayName, 'Horizon');
+    assert.equal(organization.internalReference, 'ORG-001');
   });
 });
