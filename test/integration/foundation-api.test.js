@@ -49,7 +49,7 @@ function seedCoreData(service) {
     password: 'super-secret-password',
     organizationIds: [organization.id]
   }, actorId);
-  service.openUserAccount({
+  const outsiderAccount = service.openUserAccount({
     personId: outsiderPerson.id,
     username: 'admin-b',
     email: 'admin-b@example.edu',
@@ -66,6 +66,8 @@ function seedCoreData(service) {
     'accounts.write',
     'academics.read',
     'academics.write',
+    'assignments.read',
+    'assignments.write',
     'documents.read',
     'documents.write',
     'credentials.read',
@@ -84,6 +86,8 @@ function seedCoreData(service) {
       'accounts.write',
       'academics.read',
       'academics.write',
+      'assignments.read',
+      'assignments.write',
       'documents.read',
       'documents.write',
       'credentials.read',
@@ -92,6 +96,7 @@ function seedCoreData(service) {
     ]
   }, actorId);
   service.assignRole({ personId: person.id, roleId: role.id, organizationId: organization.id }, actorId);
+  service.assignRole({ personId: outsiderPerson.id, roleId: role.id, organizationId: outsiderOrganization.id }, actorId);
 
   const learner = service.createLearner({ organizationId: organization.id, personId: person.id, learnerNumber: 'LRN-A' }, actorId);
   const year = service.createAcademicYear({
@@ -135,7 +140,20 @@ function seedCoreData(service) {
     credentialType: 'diploma'
   }, actorId);
 
-  return { organization, outsiderOrganization, account, person, year, program, learningClass, enrollment, document, credential };
+  return {
+    organization,
+    outsiderOrganization,
+    account,
+    outsiderAccount,
+    person,
+    year,
+    program,
+    learningClass,
+    enrollment,
+    document,
+    credential,
+    learner
+  };
 }
 
 async function login(baseUrl, { username, password, organizationId }) {
@@ -171,7 +189,13 @@ test('core foundation APIs expose read/list/update/archive with tenant isolation
       password: 'super-secret-password',
       organizationId: seeded.organization.id
     });
+    const outsiderAuth = await login(baseUrl, {
+      username: 'admin-b',
+      password: 'super-secret-password',
+      organizationId: seeded.outsiderOrganization.id
+    });
     const token = auth.accessToken;
+    const outsiderToken = outsiderAuth.accessToken;
 
     const organizations = await getList(baseUrl, '/organizations', token);
     assert.equal(organizations.items.length, 1);
@@ -207,5 +231,100 @@ test('core foundation APIs expose read/list/update/archive with tenant isolation
       headers: authHeaders(token)
     });
     assert.equal(crossTenantList.status, 403);
+
+    const assignmentResponse = await fetch(`${baseUrl}/assignments`, {
+      method: 'POST',
+      headers: authHeaders(token, { 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        organizationId: seeded.organization.id,
+        classId: seeded.learningClass.id,
+        title: 'Math quiz',
+        type: 'quiz',
+        dueAt: '2026-10-01T10:00:00Z'
+      })
+    });
+    assert.equal(assignmentResponse.status, 201);
+    const assignment = await assignmentResponse.json();
+
+    const submissionResponse = await fetch(`${baseUrl}/assignments/submissions`, {
+      method: 'POST',
+      headers: authHeaders(token, { 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        organizationId: seeded.organization.id,
+        assignmentId: assignment.id,
+        learnerId: seeded.learner.id,
+        contentReference: 'file://submission-a'
+      })
+    });
+    assert.equal(submissionResponse.status, 201);
+    const submission = await submissionResponse.json();
+
+    const gradeResponse = await fetch(`${baseUrl}/assignments/submissions/grade`, {
+      method: 'POST',
+      headers: authHeaders(token, { 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        submissionId: submission.id,
+        score: 16,
+        maxScore: 20,
+        coefficient: 2
+      })
+    });
+    assert.equal(gradeResponse.status, 201);
+
+    const outsiderGradeAttempt = await fetch(`${baseUrl}/assignments/submissions/grade`, {
+      method: 'POST',
+      headers: authHeaders(outsiderToken, { 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        submissionId: submission.id,
+        score: 15,
+        maxScore: 20,
+        coefficient: 1
+      })
+    });
+    assert.equal(outsiderGradeAttempt.status, 403);
+
+    const documentVersionResponse = await fetch(`${baseUrl}/documents/versions`, {
+      method: 'POST',
+      headers: authHeaders(token, { 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        previousDocumentId: seeded.document.id,
+        title: 'Transcript v2',
+        storageReference: 'file://transcript-v2'
+      })
+    });
+    assert.equal(documentVersionResponse.status, 201);
+    const versionedDocument = await documentVersionResponse.json();
+
+    const credentialRevisionResponse = await fetch(`${baseUrl}/credentials/revisions`, {
+      method: 'POST',
+      headers: authHeaders(token, { 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        previousCredentialId: seeded.credential.id,
+        documentId: versionedDocument.id,
+        credentialType: 'diploma'
+      })
+    });
+    assert.equal(credentialRevisionResponse.status, 201);
+
+    const outsiderVersionAttempt = await fetch(`${baseUrl}/documents/versions`, {
+      method: 'POST',
+      headers: authHeaders(outsiderToken, { 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        previousDocumentId: seeded.document.id,
+        title: 'forbidden',
+        storageReference: 'file://forbidden'
+      })
+    });
+    assert.equal(outsiderVersionAttempt.status, 403);
+
+    const outsiderCredentialRevisionAttempt = await fetch(`${baseUrl}/credentials/revisions`, {
+      method: 'POST',
+      headers: authHeaders(outsiderToken, { 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        previousCredentialId: seeded.credential.id,
+        credentialType: 'diploma'
+      })
+    });
+    assert.equal(outsiderCredentialRevisionAttempt.status, 403);
   });
 });

@@ -93,13 +93,22 @@ export class EducationPlatformService extends FoundationService {
   calculateLearnerAverage({ organizationId, learnerId }) {
     const grades = Array.from(this.grades.values())
       .filter((entry) => entry.organizationId === organizationId && entry.learnerId === learnerId);
+    const latestByAssessment = new Map();
+    for (const grade of grades) {
+      const assessmentKey = grade.assignmentId ?? '__manual__';
+      const currentLatest = latestByAssessment.get(assessmentKey);
+      if (!currentLatest || grade.version > currentLatest.version) {
+        latestByAssessment.set(assessmentKey, grade);
+      }
+    }
+    const effectiveGrades = Array.from(latestByAssessment.values());
 
-    if (grades.length === 0) {
+    if (effectiveGrades.length === 0) {
       return { averageOn20: 0, weightedPoints: 0, totalCoefficients: 0 };
     }
 
-    const weightedPoints = grades.reduce((sum, item) => sum + item.weightedScore, 0);
-    const totalCoefficients = grades.reduce((sum, item) => sum + item.coefficient, 0);
+    const weightedPoints = effectiveGrades.reduce((sum, item) => sum + item.weightedScore, 0);
+    const totalCoefficients = effectiveGrades.reduce((sum, item) => sum + item.coefficient, 0);
     return {
       averageOn20: totalCoefficients === 0 ? 0 : Number((weightedPoints / totalCoefficients).toFixed(2)),
       weightedPoints: Number(weightedPoints.toFixed(2)),
@@ -151,7 +160,7 @@ export class EducationPlatformService extends FoundationService {
       return { total: 0, present: 0, rate: 0 };
     }
 
-    const present = records.filter((record) => record.status === 'present').length;
+    const present = records.filter((record) => record.status !== 'absent' && record.status !== 'unexcused').length;
     return {
       total: records.length,
       present,
@@ -163,6 +172,14 @@ export class EducationPlatformService extends FoundationService {
     this.assertOrganizationContext(input.organizationId);
     this.assertExists(this.classes, input.classId, 'class');
     this.assertExists(this.people, input.teacherPersonId, 'person');
+    const learningClass = this.classes.get(input.classId);
+    const teacher = this.people.get(input.teacherPersonId);
+    if (learningClass.organizationId !== input.organizationId) {
+      throw new ValidationError('Schedule entry organizationId must match class.organizationId.');
+    }
+    if (teacher.primaryOrganizationId && teacher.primaryOrganizationId !== input.organizationId) {
+      throw new ValidationError('Schedule entry teacher must belong to the same organization.');
+    }
     const entry = new ScheduleEntry(input);
     this.scheduleEntries.set(entry.id, entry);
     this.recordEvent('scheduling.entry.created', entry, actorId);
@@ -172,6 +189,10 @@ export class EducationPlatformService extends FoundationService {
   createAssignment(input, actorId = null) {
     this.assertOrganizationContext(input.organizationId);
     this.assertExists(this.classes, input.classId, 'class');
+    const learningClass = this.classes.get(input.classId);
+    if (learningClass.organizationId !== input.organizationId) {
+      throw new ValidationError('Assignment organizationId must match class.organizationId.');
+    }
     const assignment = new Assignment(input);
     this.assignments.set(assignment.id, assignment);
     this.recordEvent('assignments.created', assignment, actorId);
@@ -182,10 +203,17 @@ export class EducationPlatformService extends FoundationService {
     this.assertOrganizationContext(input.organizationId);
     this.assertExists(this.assignments, input.assignmentId, 'assignment');
     this.assertExists(this.learners, input.learnerId, 'learner');
+    const assignment = this.assignments.get(input.assignmentId);
+    const learner = this.learners.get(input.learnerId);
+    if (assignment.organizationId !== input.organizationId) {
+      throw new ValidationError('Submission organizationId must match assignment.organizationId.');
+    }
+    if (learner.organizationId !== input.organizationId) {
+      throw new ValidationError('Submission organizationId must match learner.organizationId.');
+    }
     const submission = new AssignmentSubmission(input);
     this.assignmentSubmissions.set(submission.id, submission);
 
-    const assignment = this.assignments.get(submission.assignmentId);
     const due = Date.parse(assignment.dueAt);
     const submitted = Date.parse(submission.submittedAt);
 
@@ -243,6 +271,14 @@ export class EducationPlatformService extends FoundationService {
     this.assertOrganizationContext(input.organizationId);
     this.assertExists(this.learners, input.learnerId, 'learner');
     this.assertExists(this.fees, input.feeConfigurationId, 'fee configuration');
+    const learner = this.learners.get(input.learnerId);
+    const fee = this.fees.get(input.feeConfigurationId);
+    if (learner.organizationId !== input.organizationId) {
+      throw new ValidationError('Invoice organizationId must match learner.organizationId.');
+    }
+    if (fee.organizationId !== input.organizationId) {
+      throw new ValidationError('Invoice organizationId must match fee.organizationId.');
+    }
     const invoice = new Invoice(input);
     this.invoices.set(invoice.id, invoice);
     this.recordEvent('finance.invoice.created', invoice, actorId);
@@ -252,14 +288,19 @@ export class EducationPlatformService extends FoundationService {
   recordPayment(input, actorId = null) {
     this.assertOrganizationContext(input.organizationId);
     this.assertExists(this.invoices, input.invoiceId, 'invoice');
+    const invoice = this.invoices.get(input.invoiceId);
+    if (invoice.organizationId !== input.organizationId) {
+      throw new ValidationError('Payment organizationId must match invoice.organizationId.');
+    }
     const payment = new Payment(input);
-    this.payments.set(payment.id, payment);
-
-    const invoice = this.invoices.get(payment.invoiceId);
     if (invoice.currency !== payment.currency) {
       throw new ValidationError('Payment currency must match invoice currency.');
     }
+    if (payment.amount > invoice.balance) {
+      throw new ValidationError('Payment amount cannot exceed invoice balance.');
+    }
 
+    this.payments.set(payment.id, payment);
     invoice.balance = Number((invoice.balance - payment.amount).toFixed(2));
     invoice.touch();
     this.recordEvent('finance.payment.recorded', payment, actorId, { remainingBalance: invoice.balance });
@@ -294,6 +335,10 @@ export class EducationPlatformService extends FoundationService {
     this.assertOrganizationContext(input.organizationId);
     this.assertExists(this.threads, input.threadId, 'thread');
     this.assertExists(this.people, input.authorPersonId, 'person');
+    const thread = this.threads.get(input.threadId);
+    if (thread.organizationId !== input.organizationId) {
+      throw new ValidationError('Message organizationId must match thread.organizationId.');
+    }
     const message = new ThreadMessage(input);
     this.messages.set(message.id, message);
     this.recordEvent('communications.message.posted', message, actorId);
@@ -303,6 +348,10 @@ export class EducationPlatformService extends FoundationService {
   recordDiscipline(input, actorId = null) {
     this.assertOrganizationContext(input.organizationId);
     this.assertExists(this.learners, input.learnerId, 'learner');
+    const learner = this.learners.get(input.learnerId);
+    if (learner.organizationId !== input.organizationId) {
+      throw new ValidationError('Discipline organizationId must match learner.organizationId.');
+    }
     const record = new DisciplineRecord(input);
     this.disciplineRecords.set(record.id, record);
     this.recordEvent('discipline.recorded', record, actorId);
@@ -328,6 +377,10 @@ export class EducationPlatformService extends FoundationService {
   createPaidTraining(input, actorId = null) {
     this.assertOrganizationContext(input.organizationId);
     this.assertExists(this.virtualSchools, input.virtualSchoolId, 'virtual school');
+    const virtualSchool = this.virtualSchools.get(input.virtualSchoolId);
+    if (virtualSchool.organizationId !== input.organizationId) {
+      throw new ValidationError('Training organizationId must match virtualSchool.organizationId.');
+    }
     const training = new PaidTraining(input);
     this.paidTrainings.set(training.id, training);
     this.recordEvent('virtual-school.training.created', training, actorId);
@@ -337,6 +390,10 @@ export class EducationPlatformService extends FoundationService {
   issueCertificate(input, actorId = null) {
     this.assertOrganizationContext(input.organizationId);
     this.assertExists(this.learners, input.learnerId, 'learner');
+    const learner = this.learners.get(input.learnerId);
+    if (learner.organizationId !== input.organizationId) {
+      throw new ValidationError('Certificate organizationId must match learner.organizationId.');
+    }
     const certificate = new Certificate({
       ...input,
       verificationCode: input.verificationCode ?? createPermanentId()
@@ -366,7 +423,15 @@ export class EducationPlatformService extends FoundationService {
     this.assertOrganizationContext(organizationId);
     this.assertExists(this.learners, learnerId, 'learner');
     this.assertExists(this.people, parentPersonId, 'person');
-    const id = `${organizationId}:${learnerId}:${scope}`;
+    const learner = this.learners.get(learnerId);
+    const parent = this.people.get(parentPersonId);
+    if (learner.organizationId !== organizationId) {
+      throw new ValidationError('Parental consent organizationId must match learner.organizationId.');
+    }
+    if (parent.primaryOrganizationId && parent.primaryOrganizationId !== organizationId) {
+      throw new ValidationError('Parental consent parent must belong to the same organization.');
+    }
+    const id = `${organizationId}:${learnerId}:${parentPersonId}:${scope}`;
     const consent = {
       id,
       organizationId,

@@ -41,10 +41,10 @@ const contentTypes = {
 
 function getCorsOrigin(request) {
   const requestOrigin = request.headers.get('origin');
-  const allowedOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
   if (!requestOrigin) {
-    return allowedOrigin;
+    return null;
   }
+  const allowedOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
   if (requestOrigin !== allowedOrigin) {
     throw new ApiError('CORS_FORBIDDEN', 'Origin is not allowed.', 403);
   }
@@ -53,11 +53,18 @@ function getCorsOrigin(request) {
 
 function withSecurityHeaders(response, corsOrigin) {
   const headers = new Headers(response.headers);
-  headers.set('access-control-allow-origin', corsOrigin);
-  headers.set('access-control-allow-headers', 'authorization, content-type, x-actor-id');
-  headers.set('access-control-allow-methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  headers.set('vary', 'Origin');
+  if (corsOrigin) {
+    headers.set('access-control-allow-origin', corsOrigin);
+    headers.set('access-control-allow-headers', 'authorization, content-type, x-actor-id');
+    headers.set('access-control-allow-methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    headers.set('vary', 'Origin');
+  }
   headers.set('x-content-type-options', 'nosniff');
+  const connectSources = [`'self'`];
+  if (corsOrigin) {
+    connectSources.push(corsOrigin);
+  }
+  headers.set('content-security-policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ${connectSources.join(' ')}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`);
   return new Response(response.body, { status: response.status, headers });
 }
 
@@ -143,13 +150,16 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
   registerAuditRoutes(router, context);
 
   return async function app(request) {
-    let corsOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
+    let corsOrigin = null;
     try {
       enforceRateLimit(request);
       corsOrigin = getCorsOrigin(request);
       const url = new URL(request.url);
 
       if (request.method === 'OPTIONS') {
+        if (!corsOrigin) {
+          throw new ApiError('CORS_FORBIDDEN', 'Origin header is required for preflight.', 403);
+        }
         return withSecurityHeaders(new Response(null, { status: 204 }), corsOrigin);
       }
 

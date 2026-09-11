@@ -1,6 +1,7 @@
 import { parseJson, parsePagination } from '../middleware/validation.js';
 import { authorizeRequest } from '../middleware/auth.js';
 import { makeCrudHandlers } from './_helpers.js';
+import { ApiError } from '../../shared/errors.js';
 
 export function registerGradingRoutes(router, { service }) {
   const gradeHandlers = makeCrudHandlers({
@@ -31,10 +32,17 @@ export function registerGradingRoutes(router, { service }) {
 
   router.add('GET', '/grading/average', async (request, url) => {
     const organizationId = url.searchParams.get('organizationId');
+    const learnerId = url.searchParams.get('learnerId');
+    if (!organizationId) {
+      throw new ApiError('INVALID_INPUT', 'organizationId is required.', 400);
+    }
+    if (!learnerId) {
+      throw new ApiError('INVALID_INPUT', 'learnerId is required.', 400);
+    }
     authorizeRequest(request, service, { organizationId, permissions: ['grading.read'] });
     return Response.json(service.calculateLearnerAverage({
       organizationId,
-      learnerId: url.searchParams.get('learnerId')
+      learnerId
     }));
   });
 }

@@ -82,12 +82,22 @@ const RESOURCE_TO_COLLECTION = {
   organizations: 'organizations',
   people: 'people',
   accounts: 'accounts',
+  learners: 'learners',
   academicYears: 'academicYears',
   programs: 'programs',
   classes: 'classes',
   enrollments: 'enrollments',
   documents: 'documents',
   credentials: 'credentials',
+  fees: 'fees',
+  invoices: 'invoices',
+  payments: 'payments',
+  reportCards: 'reportCards',
+  threads: 'threads',
+  messages: 'messages',
+  disciplineRecords: 'disciplineRecords',
+  calendarEvents: 'calendarEvents',
+  platformSubscriptions: 'platformSubscriptions',
   grades: 'grades',
   attendance: 'attendance',
   assignments: 'assignments',
@@ -374,9 +384,24 @@ export class PersistentEducationPlatformService extends EducationPlatformService
 
   gradeSubmission(submissionId, input, actorId = null) {
     return this.transactional(() => {
+      this.assertExists(this.assignmentSubmissions, submissionId, 'submission');
       const before = cloneRecord(this.assignmentSubmissions.get(submissionId));
-      const grade = super.gradeSubmission(submissionId, input, actorId);
-      this.recordUpdate('assignmentSubmissions', before, this.assignmentSubmissions.get(submissionId), actorId, 'assignment-submission.grade');
+      const submission = this.assignmentSubmissions.get(submissionId);
+      submission.score = Number(input.score);
+      submission.maxScore = Number(input.maxScore ?? 20);
+      submission.touch();
+      this.recordEvent('assignments.submission.graded', submission, actorId);
+
+      const grade = EducationPlatformService.prototype.recordGrade.call(this, {
+        organizationId: submission.organizationId,
+        learnerId: submission.learnerId,
+        assignmentId: submission.assignmentId,
+        score: submission.score,
+        maxScore: submission.maxScore,
+        coefficient: Number(input.coefficient ?? 1)
+      }, actorId);
+
+      this.recordUpdate('assignmentSubmissions', before, submission, actorId, 'assignment-submission.grade');
       this.persistRecord('grades', grade, { actorId, action: 'grade.create' });
       return grade;
     });
@@ -594,11 +619,15 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     };
   }
 
-  logout(refreshToken) {
-    this.connection.run(
-      'UPDATE refresh_tokens SET revoked_at = ? WHERE refresh_token_hash = ? AND revoked_at IS NULL',
-      [new Date().toISOString(), hashToken(refreshToken)]
-    );
+  logout(refreshToken, accountId = null) {
+    const params = [new Date().toISOString(), hashToken(refreshToken)];
+    let sql = 'UPDATE refresh_tokens SET revoked_at = ? WHERE refresh_token_hash = ? AND revoked_at IS NULL';
+    if (accountId) {
+      sql += ' AND account_id = ?';
+      params.push(accountId);
+    }
+
+    this.connection.run(sql, params);
     return { loggedOut: true };
   }
 

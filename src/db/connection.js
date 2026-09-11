@@ -66,45 +66,8 @@ function createSqliteConnection(databaseUrl) {
   return connection;
 }
 
-export async function createPostgresConnection(databaseUrl = DEFAULT_DATABASE_URL) {
-  const { Pool } = await import('pg');
-  const pool = new Pool({ connectionString: databaseUrl });
-  const connection = {
-    dialect: 'postgres',
-    url: databaseUrl,
-    pool,
-    async exec(sql) {
-      await pool.query(sql);
-    },
-    async get(sql, params = []) {
-      const result = await pool.query(sql, params);
-      return result.rows[0] ?? null;
-    },
-    async all(sql, params = []) {
-      const result = await pool.query(sql, params);
-      return result.rows;
-    },
-    async run(sql, params = []) {
-      return pool.query(sql, params);
-    }
-  };
-
-  const migrationFiles = readdirSync(migrationsDirectoryPath)
-    .filter((entry) => entry.endsWith('.sql'))
-    .sort();
-  await connection.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())');
-  for (const fileName of migrationFiles) {
-    const alreadyApplied = await connection.get('SELECT version FROM schema_migrations WHERE version = $1', [fileName]);
-    if (alreadyApplied) {
-      continue;
-    }
-
-    const sql = readFileSync(join(migrationsDirectoryPath, fileName), 'utf8');
-    await connection.exec(sql);
-    await connection.run('INSERT INTO schema_migrations(version) VALUES ($1)', [fileName]);
-  }
-
-  return connection;
+export async function createPostgresConnection() {
+  throw new Error('PostgreSQL connection is not supported in this synchronous repository layer yet.');
 }
 
 export function createDatabaseConnection({ url = DEFAULT_DATABASE_URL } = {}) {

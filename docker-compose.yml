@@ -10,8 +10,8 @@ services:
     environment:
       PORT: 3000
       DB_URL: sqlite:/tmp/eduplateforme/eduplateforme.sqlite
-      JWT_SECRET: change-me-in-production
-      DATA_ENCRYPTION_KEY: change-me-in-production
+      JWT_SECRET: ${JWT_SECRET}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
       CORS_ORIGIN: http://localhost:3000
     depends_on:
       - postgres

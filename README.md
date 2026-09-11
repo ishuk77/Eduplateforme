@@ -60,6 +60,9 @@ npm test
 npm start
 ```
 
+> ⚠️ Security note: sample values in `.env.example` and `docker-compose.yml` are for local development only and must be replaced before any shared/staging/production deployment.
+> ℹ️ Runtime note: the current repository layer runs on SQLite for the main app path; PostgreSQL wiring is not yet enabled in the synchronous server bootstrap.
+
 ## Core API coverage now available
 
 - Organizations: create + list/read/update/archive/history

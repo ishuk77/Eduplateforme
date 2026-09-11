@@ -1,6 +1,7 @@
 import { parseJson } from '../middleware/validation.js';
 import { authorizeRequest } from '../middleware/auth.js';
 import { makeCrudHandlers } from './_helpers.js';
+import { ValidationError } from '../../shared/entity.js';
 
 export function registerAssignmentRoutes(router, { service }) {
   const handlers = makeCrudHandlers({
@@ -27,7 +28,10 @@ export function registerAssignmentRoutes(router, { service }) {
   router.add('POST', '/assignments/submissions/grade', async (request) => {
     const body = await parseJson(request);
     const submission = service.assignmentSubmissions.get(body.submissionId);
-    const identity = authorizeRequest(request, service, { organizationId: submission?.organizationId ?? body.organizationId, permissions: ['assignments.write'] });
+    if (!submission) {
+      throw new ValidationError(`Unknown submission: ${body.submissionId}`);
+    }
+    const identity = authorizeRequest(request, service, { organizationId: submission.organizationId, permissions: ['assignments.write'] });
     return Response.json(service.gradeSubmission(body.submissionId, body, identity.actorId), { status: 201 });
   });
 }

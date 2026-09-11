@@ -16,16 +16,29 @@ async function readBody(req) {
 
 export function createHttpServer(options = {}) {
   const app = createApp(options);
+  const serverBaseUrl = process.env.SERVER_BASE_URL ?? 'http://localhost';
 
   return http.createServer(async (req, res) => {
-    const request = new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, {
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (Array.isArray(value)) {
+        headers.set(name, value.join(','));
+      } else if (value != null) {
+        headers.set(name, String(value));
+      }
+    }
+    headers.set('x-remote-addr', req.socket.remoteAddress ?? '');
+
+    const requestUrl = new URL(req.url ?? '/', serverBaseUrl).toString();
+    const request = new Request(requestUrl, {
       method: req.method,
-      headers: req.headers,
+      headers,
       body: ['GET', 'HEAD'].includes(req.method ?? 'GET') ? undefined : await readBody(req)
     });
 
     const response = await app(request);
     res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-    res.end(await response.text());
+    const body = response.body ? Buffer.from(await response.arrayBuffer()) : undefined;
+    res.end(body);
   });
 }

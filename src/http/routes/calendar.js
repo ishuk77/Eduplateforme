@@ -3,7 +3,7 @@ import { makeCrudHandlers } from './_helpers.js';
 export function registerCalendarRoutes(router, { service }) {
   const handlers = makeCrudHandlers({
     service,
-    resource: 'calendar',
+    resource: 'calendarEvents',
     create: (body, actorId) => service.createCalendarEvent(body, actorId),
     readPermission: 'calendar.read',
     writePermission: 'calendar.write'

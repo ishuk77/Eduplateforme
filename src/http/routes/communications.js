@@ -3,7 +3,7 @@ import { makeCrudHandlers } from './_helpers.js';
 export function registerCommunicationRoutes(router, { service }) {
   const threadHandlers = makeCrudHandlers({
     service,
-    resource: 'communicationsThreads',
+    resource: 'threads',
     create: (body, actorId) => service.createDiscussionThread(body, actorId),
     readPermission: 'communications.read',
     writePermission: 'communications.write'
@@ -11,7 +11,7 @@ export function registerCommunicationRoutes(router, { service }) {
 
   const messageHandlers = makeCrudHandlers({
     service,
-    resource: 'communicationsMessages',
+    resource: 'messages',
     create: (body, actorId) => service.postThreadMessage(body, actorId),
     readPermission: 'communications.read',
     writePermission: 'communications.write'

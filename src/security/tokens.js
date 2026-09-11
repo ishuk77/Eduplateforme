@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 
 function toBase64Url(value) {
   return Buffer.from(value).toString('base64url');
@@ -9,7 +9,15 @@ function fromBase64Url(value) {
 }
 
 function getSecret() {
-  return process.env.JWT_SECRET ?? 'eduplateforme-dev-secret-change-me';
+  if (process.env.JWT_SECRET) {
+    return process.env.JWT_SECRET;
+  }
+
+  if (!globalThis.__eduplateformeVolatileJwtSecret) {
+    globalThis.__eduplateformeVolatileJwtSecret = randomBytes(32).toString('hex');
+  }
+
+  return globalThis.__eduplateformeVolatileJwtSecret;
 }
 
 export function createRefreshToken() {
@@ -38,12 +46,18 @@ export function verifyJwt(token) {
   }
 
   const signingInput = `${encodedHeader}.${encodedPayload}`;
-  const expectedSignature = createHmac('sha256', getSecret()).update(signingInput).digest('base64url');
-  if (expectedSignature !== signature) {
+  const expectedSignature = createHmac('sha256', getSecret()).update(signingInput).digest();
+  const providedSignature = Buffer.from(signature, 'base64url');
+  if (providedSignature.length !== expectedSignature.length || !timingSafeEqual(expectedSignature, providedSignature)) {
     return null;
   }
 
-  const payload = JSON.parse(fromBase64Url(encodedPayload));
+  let payload;
+  try {
+    payload = JSON.parse(fromBase64Url(encodedPayload));
+  } catch {
+    return null;
+  }
   const now = Math.floor(Date.now() / 1000);
   if (payload.exp && payload.exp < now) {
     return null;

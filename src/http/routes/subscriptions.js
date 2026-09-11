@@ -3,7 +3,7 @@ import { makeCrudHandlers } from './_helpers.js';
 export function registerSubscriptionRoutes(router, { service }) {
   const handlers = makeCrudHandlers({
     service,
-    resource: 'subscriptions',
+    resource: 'platformSubscriptions',
     create: (body, actorId) => service.createPlatformSubscription(body, actorId),
     readPermission: 'subscriptions.read',
     writePermission: 'subscriptions.write'

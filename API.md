@@ -5,6 +5,7 @@
 - `POST /auth/refresh`
 - `DELETE /auth/logout`
 - `GET /auth/me`
+- `GET /auth/validate`
 
 ## Security model
 - Protected routes require an `Authorization` header with a bearer access token.
@@ -79,6 +80,69 @@
 - `DELETE /credentials/:id` (archive)
 - `GET /credentials/:id/history`
 - `POST /credentials/revisions`
+
+## Additional secured modules
+
+### Grading
+- `POST /grading/systems`
+- `POST /grading/grades`
+- `GET /grading/grades`
+- `GET /grading/grades/:id`
+- `PUT /grading/grades/:id`
+- `DELETE /grading/grades/:id` (archive)
+- `GET /grading/grades/:id/history`
+- `GET /grading/average?organizationId=<orgId>&learnerId=<learnerId>`
+
+### Attendance
+- `POST /attendance/records`
+- `GET /attendance/records`
+- `GET /attendance/records/:id`
+- `PUT /attendance/records/:id`
+- `DELETE /attendance/records/:id` (archive)
+- `GET /attendance/records/:id/history`
+- `GET /attendance/rate?organizationId=<orgId>&learnerId=<learnerId>`
+
+### Scheduling
+- `POST /scheduling/entries`
+
+### Assignments
+- `POST /assignments`
+- `GET /assignments`
+- `GET /assignments/:id`
+- `PUT /assignments/:id`
+- `DELETE /assignments/:id` (archive)
+- `GET /assignments/:id/history`
+- `POST /assignments/submissions`
+- `POST /assignments/submissions/grade`
+
+### Finance
+- `POST /finance/fees`
+- `GET /finance/fees`
+- `GET /finance/fees/:id`
+- `PUT /finance/fees/:id`
+- `DELETE /finance/fees/:id` (archive)
+- `GET /finance/fees/:id/history`
+- `POST /finance/invoices`
+- `GET /finance/invoices`
+- `GET /finance/invoices/:id`
+- `PUT /finance/invoices/:id`
+- `DELETE /finance/invoices/:id` (archive)
+- `GET /finance/invoices/:id/history`
+- `POST /finance/payments`
+- `GET /finance/payments`
+- `GET /finance/payments/:id`
+- `PUT /finance/payments/:id`
+- `DELETE /finance/payments/:id` (archive)
+- `GET /finance/payments/:id/history`
+
+### Notifications and governance
+- `POST /notifications`
+- `POST /notifications/sent`
+- `POST /virtual-schools`
+- `POST /virtual-schools/trainings`
+- `POST /certificates`
+- `POST /i18n/profile`
+- `POST /security/parental-consents`
 
 ## Protected CRUD examples
 Each protected route expects a bearer token in the `Authorization` header.

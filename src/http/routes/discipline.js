@@ -3,7 +3,7 @@ import { makeCrudHandlers } from './_helpers.js';
 export function registerDisciplineRoutes(router, { service }) {
   const handlers = makeCrudHandlers({
     service,
-    resource: 'discipline',
+    resource: 'disciplineRecords',
     create: (body, actorId) => service.recordDiscipline(body, actorId),
     readPermission: 'discipline.read',
     writePermission: 'discipline.write'

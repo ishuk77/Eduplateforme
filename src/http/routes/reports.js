@@ -3,7 +3,7 @@ import { makeCrudHandlers } from './_helpers.js';
 export function registerReportRoutes(router, { service }) {
   const handlers = makeCrudHandlers({
     service,
-    resource: 'reports',
+    resource: 'reportCards',
     create: (body, actorId) => service.generateReportCard(body, actorId),
     readPermission: 'reports.read',
     writePermission: 'reports.write'

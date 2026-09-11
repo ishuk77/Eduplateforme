@@ -20,7 +20,7 @@ function setupAcademicBase(service) {
   return { org, teacher, learner, klass };
 }
 
-test('grading supports coefficients and grade versioning', () => {
+test('grading supports coefficients and keeps latest grade version in averages', () => {
   const service = createEducationPlatformService();
   const { org, learner, klass } = setupAcademicBase(service);
 
@@ -31,5 +31,5 @@ test('grading supports coefficients and grade versioning', () => {
 
   assert.equal(g1.version, 1);
   assert.equal(g2.version, 2);
-  assert.equal(service.calculateLearnerAverage({ organizationId: org.id, learnerId: learner.id }).averageOn20, 14);
+  assert.equal(service.calculateLearnerAverage({ organizationId: org.id, learnerId: learner.id }).averageOn20, 16);
 });

@@ -51,7 +51,25 @@ export function registerAcademicRoutes(router, { service }) {
     })
   });
 
+  const learnersHandlers = makeCrudHandlers({
+    service,
+    resource: 'learners',
+    create: (body, actorId) => service.createLearner(body, actorId),
+    readPermission: 'academics.read',
+    writePermission: 'academics.write',
+    listFilters: (url) => ({
+      organizationId: url.searchParams.get('organizationId') ?? null,
+      personId: url.searchParams.get('personId') ?? undefined,
+      ...parsePagination(url)
+    })
+  });
+
   router.add('POST', '/academics/learners', createWithAcademicWrite((body, actorId) => service.createLearner(body, actorId)));
+  router.add('GET', '/academics/learners', learnersHandlers.list);
+  router.add('GET', '/academics/learners/:id', learnersHandlers.get);
+  router.add('PUT', '/academics/learners/:id', learnersHandlers.update);
+  router.add('DELETE', '/academics/learners/:id', learnersHandlers.remove);
+  router.add('GET', '/academics/learners/:id/history', learnersHandlers.history);
 
   router.add('POST', '/academics/years', yearsHandlers.create);
   router.add('GET', '/academics/years', yearsHandlers.list);

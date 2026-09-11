@@ -4,9 +4,15 @@ const requestIdentityStore = new WeakMap();
 const rateLimitStore = new Map();
 
 function getClientAddress(request) {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    ?? request.headers.get('x-real-ip')
-    ?? '127.0.0.1';
+  const directAddress = request.headers.get('x-remote-addr');
+  if (process.env.TRUST_PROXY === 'true') {
+    return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      ?? request.headers.get('x-real-ip')
+      ?? directAddress
+      ?? '127.0.0.1';
+  }
+
+  return directAddress ?? '127.0.0.1';
 }
 
 export function enforceRateLimit(request, { limit = 100, windowMs = 60_000 } = {}) {
@@ -67,7 +73,7 @@ export function authorizeRequest(request, service, { organizationId = null, perm
   }
 
   for (const permission of permissions) {
-    if (!identity.permissions.includes(permission)) {
+    if (!identity.permissions.includes('*') && !identity.permissions.includes(permission)) {
       throw new ApiError('FORBIDDEN', `Missing permission: ${permission}`, 403);
     }
   }

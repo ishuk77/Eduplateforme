@@ -24,10 +24,20 @@ function normalizeStoredValue(value) {
   return value;
 }
 
+let encryptionKey = null;
+
 function createEncryptionKey() {
-  return createHash('sha256')
-    .update(process.env.DATA_ENCRYPTION_KEY ?? 'eduplateforme-dev-encryption-key-change-me')
-    .digest();
+  if (encryptionKey) {
+    return encryptionKey;
+  }
+
+  if (process.env.DATA_ENCRYPTION_KEY) {
+    encryptionKey = createHash('sha256').update(process.env.DATA_ENCRYPTION_KEY).digest();
+    return encryptionKey;
+  }
+
+  encryptionKey = randomBytes(32);
+  return encryptionKey;
 }
 
 function encodePayload(payload, sensitive) {

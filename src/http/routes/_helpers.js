@@ -1,5 +1,6 @@
 import { parseJson, parsePagination } from '../middleware/validation.js';
 import { authorizeRequest } from '../middleware/auth.js';
+import { ApiError } from '../../shared/errors.js';
 
 function getOrganizationIdFromSearch(url) {
   return url.searchParams.get('organizationId') ?? null;
@@ -47,12 +48,17 @@ export function makeCrudHandlers({
     },
     list: async (request, url) => {
       const filters = listFilters(url);
-      const identity = authorizeRequest(request, service, {
-        organizationId: filters.organizationId ?? null,
-        permissions: [readPermission]
-      });
+      const identity = authorizeRequest(request, service, { permissions: [readPermission] });
       if (!filters.organizationId) {
-        filters.organizationIds = identity.organizationIds;
+        if (identity.organizationId) {
+          filters.organizationId = identity.organizationId;
+        } else if ((identity.organizationIds?.length ?? 0) === 1) {
+          [filters.organizationId] = identity.organizationIds;
+        } else if ((identity.organizationIds?.length ?? 0) > 1) {
+          throw new ApiError('INVALID_INPUT', 'organizationId is required for multi-organization accounts.', 400);
+        }
+      } else if (!identity.organizationIds.includes(filters.organizationId)) {
+        throw new ApiError('FORBIDDEN', 'Cross-organization access is forbidden.', 403);
       }
       filters.includeArchived = parseIncludeArchived(url);
       return Response.json(service.listCrudResource(resource, filters));

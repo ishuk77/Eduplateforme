@@ -3,21 +3,21 @@ import { makeCrudHandlers } from './_helpers.js';
 export function registerFinanceRoutes(router, { service }) {
   const feeHandlers = makeCrudHandlers({
     service,
-    resource: 'financeFees',
+    resource: 'fees',
     create: (body, actorId) => service.configureFee(body, actorId),
     readPermission: 'finance.read',
     writePermission: 'finance.write'
   });
   const invoiceHandlers = makeCrudHandlers({
     service,
-    resource: 'financeInvoices',
+    resource: 'invoices',
     create: (body, actorId) => service.createInvoice(body, actorId),
     readPermission: 'finance.read',
     writePermission: 'finance.write'
   });
   const paymentHandlers = makeCrudHandlers({
     service,
-    resource: 'financePayments',
+    resource: 'payments',
     create: (body, actorId) => service.recordPayment(body, actorId),
     readPermission: 'finance.read',
     writePermission: 'finance.write'
