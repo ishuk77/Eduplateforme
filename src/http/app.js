@@ -28,6 +28,7 @@ import { registerI18nRoutes } from './routes/i18n.js';
 import { registerSecurityRoutes } from './routes/security.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { registerInstitutionalRoutes } from './routes/institutional.js';
+import { registerLearningSystemRoutes } from './routes/learning-systems.js';
 import { modules, resolveModule } from '../modules.js';
 import { renderAppShell } from '../template.js';
 import { ApiError } from '../shared/errors.js';
@@ -148,6 +149,19 @@ function createOpenApiDescription() {
       '/calendar/events': { get: { summary: 'List calendar events' }, post: { summary: 'Create calendar event' } },
       '/subscriptions/platform': { get: { summary: 'List subscriptions' }, post: { summary: 'Create platform subscription' } }
       ,
+      '/lms/catalogs': { get: { summary: 'List LMS catalogs' }, post: { summary: 'Create LMS catalog' } },
+      '/lms/programs': { get: { summary: 'List LMS programs' }, post: { summary: 'Create LMS program linked to academics' } },
+      '/lms/courses': { get: { summary: 'List LMS courses' }, post: { summary: 'Create LMS course linked to an academic course' } },
+      '/lms/quizzes/{id}/attempts': { post: { summary: 'Submit and score a quiz attempt' } },
+      '/meetings': { get: { summary: 'List external meetings' }, post: { summary: 'Prepare an external meeting reference' } },
+      '/meetings/{id}/attendance/import': { post: { summary: 'Import attendance through a configured adapter' } },
+      '/data-quality/runs/execute': { post: { summary: 'Execute tenant and country data quality rules' } },
+      '/data-quality/prevalidate-export': { post: { summary: 'Prevalidate an export against data quality rules' } },
+      '/emis/exchanges/{id}/transmit': { post: { summary: 'Transmit through a configured EMIS adapter' } },
+      '/emis/exchanges/{id}/retransmit': { post: { summary: 'Retry an EMIS transmission' } },
+      '/emis/exchanges/{id}/correct': { post: { summary: 'Correct and prepare an EMIS exchange again' } },
+      '/references/{catalog}': { get: { summary: 'List standard and tenant reference entries' } },
+      '/i18n/format': { post: { summary: 'Format date, number or currency using a localization profile' } },
       '/institution/campuses': { get: { summary: 'List campuses' }, post: { summary: 'Create campus' } },
       '/institution/operating-authorizations': { get: { summary: 'List operating authorizations' }, post: { summary: 'Create operating authorization' } },
       '/institution/accreditations': { get: { summary: 'List accreditations' }, post: { summary: 'Create accreditation' } },
@@ -193,6 +207,7 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
   registerSecurityRoutes(router, context);
   registerAuditRoutes(router, context);
   registerInstitutionalRoutes(router, context);
+  registerLearningSystemRoutes(router, context);
 
   return async function app(request) {
     let corsOrigin = null;

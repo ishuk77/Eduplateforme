@@ -3,7 +3,7 @@ import { SUPPORTED_LANGUAGES, SUPPORTED_CURRENCIES } from '../../shared/constant
 import { ValidationError } from '../../shared/errors.js';
 
 export class LocalizationProfile extends Entity {
-  constructor({ id, organizationId, countryCode, city, language = 'fr', currency = 'USD', timezone = 'UTC', dateFormat = 'YYYY-MM-DD' }) {
+  constructor({ id, organizationId, userId = null, countryCode, city, language = 'fr', currency = 'USD', timezone = 'UTC', dateFormat = 'YYYY-MM-DD', calendar = 'gregory', numberingSystem = null }) {
     super({ id });
     this.organizationId = assertRequiredString(organizationId, 'organizationId');
     this.countryCode = assertRequiredString(countryCode, 'countryCode');
@@ -20,5 +20,8 @@ export class LocalizationProfile extends Entity {
     this.currency = currency;
     this.timezone = assertRequiredString(timezone, 'timezone');
     this.dateFormat = assertRequiredString(dateFormat, 'dateFormat');
+    this.calendar = assertRequiredString(calendar, 'calendar');
+    this.numberingSystem = numberingSystem;
+    this.userId = userId;
   }
 }

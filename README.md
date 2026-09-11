@@ -28,6 +28,15 @@ The repository now includes both:
    - guardian/professional profiles and contextual multi-organization assignments
    - periods, levels, subjects, courses and longitudinal learner lifecycle
    - contextual RBAC rules by resource, action and scope
+   - LMS relié aux matières/cours/programmes, progression, quiz, évaluations,
+     paiements finance et credentials
+   - visioconférence par fournisseurs externes configurables, participants,
+     permissions et import de présence
+   - Data Quality Center avec règles tenant/pays, scores, problèmes,
+     correction/validation et prévalidation d’export
+   - profils et échanges EMIS configurables par pays, mappings, référentiels,
+     transmission, accusés, erreurs et réémission
+   - référentiels ISO/ISCED extensibles et formats internationaux FR/EN
 3. l’application web/mobile fonctionnelle connectée aux API réelles :
    - landing publique, inscription, connexion et déconnexion
    - création guidée de la première école avec rôle administrateur
@@ -75,6 +84,9 @@ affichées par l’interface; aucune donnée ni réussite n’est simulée.
 - L’envoi externe (courriel, SMS, push), le stockage du contenu des devoirs et
   le rendu PDF des certificats restent délégués à des fournisseurs externes;
   l’interface n’affiche un envoi que lorsque l’API l’a réellement marqué.
+- Les réunions et échanges EMIS ne stockent aucun secret fournisseur. Sans
+  adaptateur serveur injecté, leurs opérations restent `prepared` ou
+  `pending_external`; aucun succès externe n’est simulé.
 
 ## Project structure
 

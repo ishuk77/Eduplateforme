@@ -26,4 +26,9 @@ export function registerI18nRoutes(router, { service }) {
     const identity = authorizeRequest(request, service, { organizationId: body.organizationId, permissions: ['i18n.write'] });
     return Response.json(await service.upsertLocalizationProfile(body, identity.actorId), { status: 201 });
   });
+  router.add('POST', '/i18n/format', async (request) => {
+    const body = await parseJson(request);
+    authorizeRequest(request, service, { organizationId: body.organizationId, permissions: ['i18n.read'] });
+    return Response.json(service.formatLocalizedValue(body));
+  });
 }

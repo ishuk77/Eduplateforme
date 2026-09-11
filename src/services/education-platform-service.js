@@ -37,6 +37,92 @@ import {
   TransferRecord
 } from '../domain/documents/documents.js';
 import { ValidationError, createPermanentId } from '../shared/entity.js';
+import {
+  DataQualityRule,
+  EmisProfile,
+  ExternalProvider,
+  PlatformRecord,
+  ReferenceEntry
+} from '../domain/learning-systems/learning-systems.js';
+
+const PLATFORM_RESOURCE_COLLECTIONS = Object.freeze({
+  lmsCatalogs: 'lmsCatalogs',
+  lmsPrograms: 'lmsPrograms',
+  lmsCourses: 'lmsCourses',
+  lmsModules: 'lmsModules',
+  lmsLessons: 'lmsLessons',
+  lmsResources: 'lmsResources',
+  lmsParticipants: 'lmsParticipants',
+  lmsEnrollments: 'lmsEnrollments',
+  lmsProgress: 'lmsProgress',
+  lmsQuizzes: 'lmsQuizzes',
+  lmsQuestions: 'lmsQuestions',
+  lmsAttempts: 'lmsAttempts',
+  lmsAssessments: 'lmsAssessments',
+  lmsPayments: 'lmsPayments',
+  lmsCertificates: 'lmsCertificates',
+  meetingProviders: 'meetingProviders',
+  meetings: 'meetings',
+  meetingParticipants: 'meetingParticipants',
+  meetingAttendance: 'meetingAttendance',
+  dataQualityRules: 'dataQualityRules',
+  dataQualityRuns: 'dataQualityRuns',
+  dataQualityIssues: 'dataQualityIssues',
+  emisProfiles: 'emisProfiles',
+  emisMappings: 'emisMappings',
+  emisNationalReferences: 'emisNationalReferences',
+  emisExchanges: 'emisExchanges',
+  referenceEntries: 'referenceEntries',
+  userLocalizationProfiles: 'userLocalizationProfiles'
+});
+
+const REQUIRED_FIELDS = Object.freeze({
+  lmsCatalogs: ['code', 'name'],
+  lmsPrograms: ['catalogId', 'academicProgramId', 'code', 'title'],
+  lmsCourses: ['programId', 'academicCourseId', 'code', 'title'],
+  lmsModules: ['courseId', 'title', 'position'],
+  lmsLessons: ['moduleId', 'title', 'position'],
+  lmsResources: ['lessonId', 'title', 'externalReference'],
+  lmsParticipants: ['personId', 'role'],
+  lmsEnrollments: ['participantId', 'programId'],
+  lmsProgress: ['enrollmentId', 'lessonId'],
+  lmsQuizzes: ['courseId', 'title', 'passingScore'],
+  lmsQuestions: ['quizId', 'prompt', 'questionType', 'correctAnswer'],
+  lmsAssessments: ['courseId', 'title', 'assessmentType'],
+  lmsPayments: ['enrollmentId', 'invoiceId'],
+  lmsCertificates: ['enrollmentId', 'credentialId'],
+  meetings: ['providerId', 'externalMeetingId', 'externalUrl', 'startsAt', 'timezone'],
+  meetingParticipants: ['meetingId', 'personId', 'role'],
+  meetingAttendance: ['meetingId', 'personId'],
+  emisMappings: ['profileId', 'sourceField', 'targetField'],
+  emisNationalReferences: ['profileId', 'catalog', 'code', 'label'],
+  emisExchanges: ['profileId', 'direction'],
+  referenceEntries: ['catalog', 'code', 'labels'],
+  userLocalizationProfiles: ['userId', 'countryCode', 'language', 'currency', 'timezone']
+});
+
+const STANDARD_REFERENCES = Object.freeze([
+  { catalog: 'countries', code: 'FR', labels: { fr: 'France', en: 'France' } },
+  { catalog: 'countries', code: 'SN', labels: { fr: 'Sénégal', en: 'Senegal' } },
+  { catalog: 'countries', code: 'CD', labels: { fr: 'République démocratique du Congo', en: 'Democratic Republic of the Congo' } },
+  { catalog: 'currencies', code: 'EUR', labels: { fr: 'Euro', en: 'Euro' } },
+  { catalog: 'currencies', code: 'USD', labels: { fr: 'Dollar américain', en: 'US dollar' } },
+  { catalog: 'currencies', code: 'XOF', labels: { fr: 'Franc CFA BCEAO', en: 'West African CFA franc' } },
+  { catalog: 'timezones', code: 'UTC', labels: { fr: 'Temps universel coordonné', en: 'Coordinated Universal Time' } },
+  { catalog: 'timezones', code: 'Africa/Dakar', labels: { fr: 'Dakar', en: 'Dakar' } },
+  { catalog: 'languages', code: 'fr', labels: { fr: 'Français', en: 'French' } },
+  { catalog: 'languages', code: 'en', labels: { fr: 'Anglais', en: 'English' } },
+  { catalog: 'isced', code: 'ISCED-1', labels: { fr: 'Enseignement primaire', en: 'Primary education' } },
+  { catalog: 'isced', code: 'ISCED-2', labels: { fr: 'Premier cycle du secondaire', en: 'Lower secondary education' } },
+  { catalog: 'administrative-levels', code: 'ADM1', labels: { fr: 'Premier niveau administratif', en: 'First administrative level' } },
+  { catalog: 'education-systems', code: 'GENERAL', labels: { fr: 'Enseignement général', en: 'General education' } },
+  { catalog: 'levels', code: 'PRIMARY', labels: { fr: 'Primaire', en: 'Primary' } },
+  { catalog: 'programs', code: 'GENERAL', labels: { fr: 'Programme général', en: 'General program' } },
+  { catalog: 'qualifications', code: 'CERTIFICATE', labels: { fr: 'Certificat', en: 'Certificate' } },
+  { catalog: 'grading-scales', code: 'PERCENT', labels: { fr: 'Pourcentage', en: 'Percentage' } },
+  { catalog: 'institution-codes', code: 'NATIONAL', labels: { fr: 'Identifiant national', en: 'National identifier' } },
+  { catalog: 'subjects', code: 'MATHEMATICS', labels: { fr: 'Mathématiques', en: 'Mathematics' } }
+]);
 
 function paginate(items, { limit = 25, offset = 0 } = {}) {
   const normalizedLimit = Math.max(1, Math.min(200, Number(limit) || 25));
@@ -94,6 +180,453 @@ export class EducationPlatformService extends FoundationService {
     this.consents = new Map();
     this.collaborationRequests = new Map();
     this.transfers = new Map();
+    for (const collection of Object.values(PLATFORM_RESOURCE_COLLECTIONS)) {
+      this[collection] = new Map();
+    }
+    this.externalAdapters = options.externalAdapters ?? {};
+    this.seedStandardReferences();
+  }
+
+  seedStandardReferences() {
+    for (const input of STANDARD_REFERENCES) {
+      const entry = new ReferenceEntry({
+        id: `standard:${input.catalog}:${input.code}`,
+        ...input,
+        organizationId: null,
+        standard: true
+      });
+      if (!this.referenceEntries.has(entry.id)) this.referenceEntries.set(entry.id, entry);
+    }
+    return this.referenceEntries;
+  }
+
+  createPlatformRecord(resource, input, actorId = null) {
+    const collectionName = PLATFORM_RESOURCE_COLLECTIONS[resource];
+    if (!collectionName) throw new ValidationError(`Unsupported platform resource: ${resource}`);
+    this.assertOrganizationContext(input.organizationId);
+    for (const field of REQUIRED_FIELDS[resource] ?? []) {
+      if (input[field] === undefined || input[field] === null || input[field] === '') {
+        throw new ValidationError(`${field} is required.`);
+      }
+      if (input.code && Array.from(this[collectionName].values()).some((item) =>
+        item.organizationId === input.organizationId && item.code === input.code && item.status !== 'archived'
+      )) {
+        throw new ValidationError(`code must be unique within ${resource} for the organization.`);
+      }
+      if (['lmsModules', 'lmsLessons'].includes(resource) && (!Number.isInteger(Number(input.position)) || Number(input.position) < 1)) {
+        throw new ValidationError('position must be a positive integer.');
+      }
+      if (resource === 'lmsProgress' && (!Number.isFinite(Number(input.percent)) || Number(input.percent) < 0 || Number(input.percent) > 100)) {
+        throw new ValidationError('percent must be between 0 and 100.');
+      }
+      if (resource === 'lmsQuizzes' && (!Number.isFinite(Number(input.passingScore)) || Number(input.passingScore) < 0 || Number(input.passingScore) > 100)) {
+        throw new ValidationError('passingScore must be between 0 and 100.');
+      }
+      if (resource === 'meetings') {
+        try {
+          const url = new URL(input.externalUrl);
+          if (!['https:', 'http:'].includes(url.protocol)) throw new Error('protocol');
+          new Intl.DateTimeFormat('en', { timeZone: input.timezone });
+        } catch {
+          throw new ValidationError('externalUrl and timezone must be valid.');
+        }
+        if (Number.isNaN(Date.parse(input.startsAt))) throw new ValidationError('startsAt must be a valid date.');
+      }
+    }
+    this.validatePlatformReferences(resource, input);
+    let record;
+    if (resource === 'meetingProviders') record = new ExternalProvider(input);
+    else if (resource === 'dataQualityRules') record = new DataQualityRule(input);
+    else if (resource === 'emisProfiles') record = new EmisProfile(input);
+    else if (resource === 'referenceEntries') record = new ReferenceEntry({ ...input, standard: false });
+    else record = new PlatformRecord(input);
+
+    if (resource === 'lmsProgress') {
+      record.percent = Number(input.percent);
+      record.completedAt = record.percent === 100 ? (input.completedAt ?? new Date().toISOString()) : null;
+    }
+    if (resource === 'lmsEnrollments') record.enrollmentStatus = input.enrollmentStatus ?? 'active';
+    if (resource === 'meetings') record.externalState = input.externalState ?? 'prepared';
+    if (resource === 'emisExchanges') {
+      record.exchangeState = 'prepared';
+      record.attempts = [];
+      record.preparedPayload = record.payload
+        ? this.applyEmisMappings(record.profileId, record.payload, record.direction)
+        : null;
+      record.validationErrors = this.validateEmisPayload(record);
+    }
+
+    this[collectionName].set(record.id, record);
+    this.recordEvent(`${resource}.created`, record, actorId);
+    return record;
+  }
+
+  applyEmisMappings(profileId, payload, direction) {
+    const mappings = Array.from(this.emisMappings.values()).filter((mapping) => mapping.profileId === profileId);
+    const mapRecord = (record) => Object.fromEntries(mappings.map((mapping) => {
+      const source = direction === 'export' ? mapping.sourceField : mapping.targetField;
+      const target = direction === 'export' ? mapping.targetField : mapping.sourceField;
+      const rawValue = record?.[source];
+      const mappedValue = mapping.valueMapping?.[rawValue] ?? rawValue;
+      return [target, mappedValue];
+    }));
+    if (Array.isArray(payload)) return payload.map(mapRecord);
+    if (Array.isArray(payload?.items)) return { ...payload, items: payload.items.map(mapRecord) };
+    return mapRecord(payload);
+  }
+
+  validatePlatformReferences(resource, input) {
+    const links = {
+      lmsPrograms: [['lmsCatalogs', input.catalogId, 'catalog'], ['programs', input.academicProgramId, 'academic program']],
+      lmsCourses: [['lmsPrograms', input.programId, 'LMS program'], ['courses', input.academicCourseId, 'academic course']],
+      lmsModules: [['lmsCourses', input.courseId, 'LMS course']],
+      lmsLessons: [['lmsModules', input.moduleId, 'module']],
+      lmsResources: [['lmsLessons', input.lessonId, 'lesson']],
+      lmsParticipants: [['people', input.personId, 'person']],
+      lmsEnrollments: [['lmsParticipants', input.participantId, 'participant'], ['lmsPrograms', input.programId, 'LMS program']],
+      lmsProgress: [['lmsEnrollments', input.enrollmentId, 'LMS enrollment'], ['lmsLessons', input.lessonId, 'lesson']],
+      lmsQuizzes: [['lmsCourses', input.courseId, 'LMS course']],
+      lmsQuestions: [['lmsQuizzes', input.quizId, 'quiz']],
+      lmsAssessments: [['lmsCourses', input.courseId, 'LMS course']],
+      lmsPayments: [['lmsEnrollments', input.enrollmentId, 'LMS enrollment'], ['invoices', input.invoiceId, 'invoice']],
+      lmsCertificates: [['lmsEnrollments', input.enrollmentId, 'LMS enrollment'], ['credentials', input.credentialId, 'credential']],
+      meetings: [['meetingProviders', input.providerId, 'meeting provider']],
+      meetingParticipants: [['meetings', input.meetingId, 'meeting'], ['people', input.personId, 'person']],
+      meetingAttendance: [['meetings', input.meetingId, 'meeting'], ['people', input.personId, 'person']],
+      emisMappings: [['emisProfiles', input.profileId, 'EMIS profile']],
+      emisNationalReferences: [['emisProfiles', input.profileId, 'EMIS profile']],
+      emisExchanges: [['emisProfiles', input.profileId, 'EMIS profile']]
+    };
+    for (const [collectionName, id, label] of links[resource] ?? []) {
+      this.assertTenantRecord(this[collectionName], id, input.organizationId, label);
+    }
+    if (resource === 'lmsCourses') {
+      const lmsProgram = this.lmsPrograms.get(input.programId);
+      const academicCourse = this.courses.get(input.academicCourseId);
+      if (academicCourse.programId && academicCourse.programId !== lmsProgram.academicProgramId) {
+        throw new ValidationError('Academic course must belong to the LMS program academic program.');
+      }
+    }
+    if (resource === 'lmsProgress') {
+      const enrollment = this.lmsEnrollments.get(input.enrollmentId);
+      const lesson = this.lmsLessons.get(input.lessonId);
+      const course = this.lmsCourses.get(this.lmsModules.get(lesson.moduleId)?.courseId);
+      if (course?.programId !== enrollment.programId) {
+        throw new ValidationError('Lesson must belong to the enrollment LMS program.');
+      }
+    }
+    if (resource === 'lmsAssessments' && input.gradingSystemId) {
+      this.assertTenantRecord(this.gradingSystems, input.gradingSystemId, input.organizationId, 'grading system');
+    }
+    if (resource === 'lmsPayments' && input.paymentId) {
+      const payment = this.assertTenantRecord(this.payments, input.paymentId, input.organizationId, 'payment');
+      if (payment.invoiceId !== input.invoiceId) throw new ValidationError('Payment must belong to the linked invoice.');
+    }
+    if (resource === 'lmsCertificates' && input.certificateId) {
+      this.assertTenantRecord(this.certificates, input.certificateId, input.organizationId, 'certificate');
+    }
+    if (resource === 'lmsCertificates') {
+      const enrollment = this.lmsEnrollments.get(input.enrollmentId);
+      const participant = this.lmsParticipants.get(enrollment.participantId);
+      const credential = this.credentials.get(input.credentialId);
+      if (credential.personId !== participant.personId) {
+        throw new ValidationError('Credential holder must be the enrolled LMS participant.');
+      }
+    }
+  }
+
+  async submitLmsQuizAttempt(input, actorId = null) {
+    const enrollment = this.assertTenantRecord(this.lmsEnrollments, input.enrollmentId, input.organizationId, 'LMS enrollment');
+    const quiz = this.assertTenantRecord(this.lmsQuizzes, input.quizId, input.organizationId, 'quiz');
+    const quizCourse = this.lmsCourses.get(quiz.courseId);
+    if (quizCourse?.programId !== enrollment.programId) {
+      throw new ValidationError('Quiz must belong to the enrollment LMS program.');
+    }
+    const questions = Array.from(this.lmsQuestions.values()).filter((item) => item.quizId === quiz.id);
+    if (questions.length === 0) throw new ValidationError('Quiz has no questions.');
+    const answers = input.answers ?? {};
+    const correct = questions.filter((question) => {
+      const answer = Array.isArray(answers)
+        ? answers.find((item) => item.questionId === question.id)?.answer
+        : answers[question.id];
+      return JSON.stringify(answer) === JSON.stringify(question.correctAnswer);
+    }).length;
+    const score = Math.round((correct / questions.length) * 10000) / 100;
+    return await this.createPlatformRecord('lmsAttempts', {
+      ...input,
+      score,
+      passed: score >= Number(quiz.passingScore),
+      submittedAt: new Date().toISOString()
+    }, actorId);
+  }
+
+  getLmsEnrollmentProgress(enrollmentId, organizationId) {
+    const enrollment = this.assertTenantRecord(this.lmsEnrollments, enrollmentId, organizationId, 'LMS enrollment');
+    const programCourseIds = new Set(Array.from(this.lmsCourses.values())
+      .filter((course) => course.programId === enrollment.programId)
+      .map((course) => course.id));
+    const moduleIds = new Set(Array.from(this.lmsModules.values())
+      .filter((module) => programCourseIds.has(module.courseId))
+      .map((module) => module.id));
+    const lessons = Array.from(this.lmsLessons.values()).filter((lesson) => moduleIds.has(lesson.moduleId));
+    const progress = Array.from(this.lmsProgress.values()).filter((item) => item.enrollmentId === enrollmentId);
+    const completedLessonIds = new Set(progress.filter((item) => item.percent === 100).map((item) => item.lessonId));
+    const percent = lessons.length === 0 ? 0 : Math.round((completedLessonIds.size / lessons.length) * 10000) / 100;
+    return {
+      enrollmentId,
+      completedLessons: completedLessonIds.size,
+      totalLessons: lessons.length,
+      percent,
+      completed: lessons.length > 0 && completedLessonIds.size === lessons.length
+    };
+  }
+
+  getMeetingJoinDetails(meetingId, personId, organizationId) {
+    const meeting = this.assertTenantRecord(this.meetings, meetingId, organizationId, 'meeting');
+    const participant = Array.from(this.meetingParticipants.values()).find((item) =>
+      item.meetingId === meetingId && item.personId === personId && item.organizationId === organizationId
+    );
+    if (!participant || participant.canJoin === false) throw new ValidationError('Participant is not allowed to join this meeting.');
+    return {
+      meetingId,
+      externalMeetingId: meeting.externalMeetingId,
+      externalUrl: meeting.externalUrl,
+      role: participant.role,
+      permissions: participant.permissions ?? []
+    };
+  }
+
+  async importMeetingAttendance(meetingId, actorId = null) {
+    const meeting = this.meetings.get(meetingId);
+    if (!meeting) throw new ValidationError(`Unknown meeting: ${meetingId}`);
+    const provider = this.meetingProviders.get(meeting.providerId);
+    const adapter = provider?.adapterKey ? this.externalAdapters.meetings?.[provider.adapterKey] : null;
+    if (!adapter?.importAttendance) {
+      meeting.attendanceState = 'pending_external';
+      meeting.touch();
+      this.recordEvent('meeting.attendance.pending-external', meeting, actorId);
+      return { meetingId, state: 'pending_external', imported: 0 };
+    }
+    const rows = await adapter.importAttendance({ provider, meeting });
+    let imported = 0;
+    for (const row of rows ?? []) {
+      await this.createPlatformRecord('meetingAttendance', {
+        ...row,
+        organizationId: meeting.organizationId,
+        meetingId
+      }, actorId);
+      imported += 1;
+    }
+    meeting.attendanceState = 'imported';
+    meeting.touch();
+    return { meetingId, state: 'imported', imported };
+  }
+
+  evaluateDataQualityRule(rule, record, records) {
+    const value = record[rule.field];
+    switch (rule.operator) {
+      case 'required': return value !== undefined && value !== null && value !== '';
+      case 'unique': return records.filter((candidate) => candidate[rule.field] === value).length <= 1;
+      case 'iso-country': return typeof value === 'string' && /^[A-Z]{2}$/.test(value);
+      case 'pattern': return new RegExp(rule.parameters?.pattern ?? '.*', 'u').test(String(value ?? ''));
+      case 'reference': return Boolean(this[PLATFORM_RESOURCE_COLLECTIONS[rule.parameters?.resource] ?? rule.parameters?.resource]?.has(value));
+      case 'not-future': return !value || Date.parse(value) <= Date.now();
+      case 'equals-field': return value === record[rule.parameters?.otherField];
+      default: throw new ValidationError(`Unsupported data quality operator: ${rule.operator}`);
+    }
+  }
+
+  async runDataQuality(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const rules = Array.from(this.dataQualityRules.values()).filter((rule) =>
+      rule.organizationId === input.organizationId
+      && rule.status !== 'archived'
+      && (!input.countryCode || !rule.countryCode || rule.countryCode === input.countryCode)
+      && (!input.targetResource || rule.targetResource === input.targetResource)
+    );
+    const run = await this.createPlatformRecord('dataQualityRuns', {
+      organizationId: input.organizationId,
+      countryCode: input.countryCode ?? null,
+      targetResource: input.targetResource ?? null,
+      runState: 'running',
+      startedAt: new Date().toISOString()
+    }, actorId);
+    let checked = 0;
+    let failedWeight = 0;
+    let totalWeight = 0;
+    for (const rule of rules) {
+      const collection = this[PLATFORM_RESOURCE_COLLECTIONS[rule.targetResource] ?? rule.targetResource];
+      if (!collection?.values) throw new ValidationError(`Unsupported data quality target: ${rule.targetResource}`);
+      const records = Array.from(collection.values()).filter((record) =>
+        record.organizationId === input.organizationId && record.status !== 'archived'
+      );
+      for (const record of records) {
+        checked += 1;
+        totalWeight += rule.weight;
+        if (!this.evaluateDataQualityRule(rule, record, records)) {
+          failedWeight += rule.weight;
+          await this.createPlatformRecord('dataQualityIssues', {
+            organizationId: input.organizationId,
+            runId: run.id,
+            ruleId: rule.id,
+            targetResource: rule.targetResource,
+            targetId: record.id,
+            field: rule.field,
+            dimension: rule.dimension,
+            issueState: 'open'
+          }, actorId);
+        }
+      }
+    }
+    run.checked = checked;
+    run.score = totalWeight === 0 ? 100 : Math.round(((totalWeight - failedWeight) / totalWeight) * 10000) / 100;
+    run.runState = 'completed';
+    run.completedAt = new Date().toISOString();
+    run.touch();
+    return run;
+  }
+
+  transitionDataQualityIssue(issueId, transition, input = {}, actorId = null) {
+    const issue = this.dataQualityIssues.get(issueId);
+    if (!issue) throw new ValidationError(`Unknown data quality issue: ${issueId}`);
+    if (transition === 'correct') {
+      if (!input.correction || typeof input.correction !== 'object' || Array.isArray(input.correction) || Object.keys(input.correction).length === 0) {
+        throw new ValidationError('correction must be a non-empty object.');
+      }
+      issue.issueState = 'corrected';
+      issue.correction = input.correction ?? null;
+      issue.correctedAt = new Date().toISOString();
+    } else if (transition === 'validate') {
+      if (issue.issueState !== 'corrected') throw new ValidationError('Issue must be corrected before validation.');
+      const rule = this.dataQualityRules.get(issue.ruleId);
+      const collection = this[PLATFORM_RESOURCE_COLLECTIONS[issue.targetResource] ?? issue.targetResource];
+      const target = collection?.get(issue.targetId);
+      const records = collection
+        ? Array.from(collection.values()).filter((record) => record.organizationId === issue.organizationId && record.status !== 'archived')
+        : [];
+      if (!rule || !target || !this.evaluateDataQualityRule(rule, target, records)) {
+        throw new ValidationError('The corrected record still fails its data quality rule.');
+      }
+      issue.issueState = 'validated';
+      issue.validatedAt = new Date().toISOString();
+    } else {
+      throw new ValidationError(`Unsupported issue transition: ${transition}`);
+    }
+    issue.touch();
+    this.recordEvent(`data-quality.issue.${transition}`, issue, actorId);
+    return issue;
+  }
+
+  async prevalidateExport(input, actorId = null) {
+    const run = await this.runDataQuality(input, actorId);
+    const openIssues = Array.from(this.dataQualityIssues.values()).filter((issue) =>
+      issue.runId === run.id && issue.issueState !== 'validated'
+    );
+    return { state: openIssues.length === 0 ? 'validated' : 'blocked', score: run.score, runId: run.id, issueCount: openIssues.length };
+  }
+
+  validateEmisPayload(exchange) {
+    const errors = [];
+    if (!exchange.fileReference && (exchange.payload === null || typeof exchange.payload !== 'object')) {
+      errors.push('payload must be structured or fileReference must be provided.');
+    }
+    if (!['import', 'export'].includes(exchange.direction)) errors.push('direction must be import or export.');
+    return errors;
+  }
+
+  correctEmisExchange(exchangeId, input, actorId = null) {
+    const exchange = this.emisExchanges.get(exchangeId);
+    if (!exchange) throw new ValidationError(`Unknown EMIS exchange: ${exchangeId}`);
+    if (!['validation_failed', 'transport_error', 'rejected', 'pending_external', 'prepared'].includes(exchange.exchangeState)) {
+      throw new ValidationError(`Exchange in state ${exchange.exchangeState} cannot be corrected.`);
+    }
+    if (input.payload !== undefined) exchange.payload = input.payload;
+    if (input.fileReference !== undefined) exchange.fileReference = input.fileReference;
+    exchange.preparedPayload = exchange.payload
+      ? this.applyEmisMappings(exchange.profileId, exchange.payload, exchange.direction)
+      : null;
+    exchange.validationErrors = this.validateEmisPayload(exchange);
+    exchange.exchangeState = 'prepared';
+    exchange.correctedAt = new Date().toISOString();
+    exchange.touch();
+    this.recordEvent('emis.exchange.corrected', exchange, actorId);
+    return exchange;
+  }
+
+  async transmitEmisExchange(exchangeId, actorId = null, { retransmission = false } = {}) {
+    const exchange = this.emisExchanges.get(exchangeId);
+    if (!exchange) throw new ValidationError(`Unknown EMIS exchange: ${exchangeId}`);
+    const allowedStates = retransmission
+      ? ['transport_error', 'rejected', 'pending_external']
+      : ['prepared', 'validation_failed'];
+    if (!allowedStates.includes(exchange.exchangeState)) {
+      throw new ValidationError(`Exchange in state ${exchange.exchangeState} cannot be ${retransmission ? 'retransmitted' : 'transmitted'}.`);
+    }
+    const profile = this.emisProfiles.get(exchange.profileId);
+    const adapter = profile?.adapterKey ? this.externalAdapters.emis?.[profile.adapterKey] : null;
+    const attemptedAt = new Date().toISOString();
+    if (exchange.validationErrors.length > 0) {
+      exchange.exchangeState = 'validation_failed';
+      exchange.attempts.push({ attemptedAt, state: 'validation_failed', errors: exchange.validationErrors });
+    } else if (!adapter?.transmit) {
+      exchange.exchangeState = 'pending_external';
+      exchange.attempts.push({ attemptedAt, state: 'pending_external', error: 'No external transport adapter configured.' });
+    } else {
+      try {
+        const result = await adapter.transmit({ profile, exchange });
+        exchange.exchangeState = 'sent';
+        exchange.externalReference = result?.externalReference ?? null;
+        exchange.attempts.push({ attemptedAt, state: 'sent', externalReference: exchange.externalReference });
+      } catch (error) {
+        exchange.exchangeState = 'transport_error';
+        exchange.attempts.push({ attemptedAt, state: 'transport_error', error: error.message });
+      }
+    }
+    exchange.touch();
+    this.recordEvent(`emis.exchange.${exchange.exchangeState}`, exchange, actorId);
+    return exchange;
+  }
+
+  acknowledgeEmisExchange(exchangeId, input, actorId = null) {
+    const exchange = this.emisExchanges.get(exchangeId);
+    if (!exchange) throw new ValidationError(`Unknown EMIS exchange: ${exchangeId}`);
+    if (exchange.exchangeState !== 'sent') throw new ValidationError('Only a sent exchange can be acknowledged.');
+    exchange.exchangeState = input.accepted === false ? 'rejected' : 'acknowledged';
+    exchange.acknowledgement = input;
+    exchange.touch();
+    this.recordEvent(`emis.exchange.${exchange.exchangeState}`, exchange, actorId);
+    return exchange;
+  }
+
+  listReferenceCatalog(catalog, { organizationId = null, countryCode = null, language = 'fr' } = {}) {
+    const items = Array.from(this.referenceEntries.values())
+      .filter((entry) => entry.catalog === catalog)
+      .filter((entry) => entry.standard || entry.organizationId === organizationId)
+      .filter((entry) => !countryCode || !entry.countryCode || entry.countryCode === countryCode)
+      .map((entry) => ({ ...entry, label: entry.labels[language] ?? entry.labels.en ?? Object.values(entry.labels)[0] }));
+    return paginate(items, { limit: 200, offset: 0 });
+  }
+
+  formatLocalizedValue(input) {
+    const profile = Array.from(this.userLocalizationProfiles.values()).find((item) =>
+      item.organizationId === input.organizationId && item.userId === input.userId
+    ) ?? this.localizationProfiles.get(input.organizationId);
+    if (!profile) throw new ValidationError('Localization profile is required.');
+    const locale = input.locale ?? profile.language;
+    if (input.type === 'date') {
+      return { formatted: new Intl.DateTimeFormat(locale, {
+        timeZone: input.timezone ?? profile.timezone,
+        dateStyle: input.dateStyle ?? 'medium',
+        calendar: input.calendar ?? profile.calendar ?? 'gregory'
+      }).format(new Date(input.value)) };
+    }
+    if (input.type === 'currency') {
+      return { formatted: new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: input.currency ?? profile.currency
+      }).format(Number(input.value)) };
+    }
+    return { formatted: new Intl.NumberFormat(locale).format(Number(input.value)) };
   }
 
   assertOrganizationContext(organizationId) {
@@ -801,6 +1334,11 @@ export class EducationPlatformService extends FoundationService {
         'virtual-schools-and-trainings',
         'certificates',
         'i18n',
+        'lms',
+        'external-meetings',
+        'data-quality',
+        'emis',
+        'reference-data',
         'subscriptions',
         'audit',
         'security',
@@ -812,6 +1350,9 @@ export class EducationPlatformService extends FoundationService {
         'all module writes are organization-scoped and auditable',
         'grading, documents and permissions remain version-aware',
         'child-related actions require explicit parental consent records'
+        ,
+        'external meeting and EMIS success requires an injected provider adapter',
+        'reference and localization rules remain tenant and country configurable'
       ],
       modules: [
         ...foundation.modules,
@@ -829,6 +1370,12 @@ export class EducationPlatformService extends FoundationService {
         'certificates',
         'subscriptions',
         'i18n'
+        ,
+        'lms',
+        'meetings',
+        'data-quality',
+        'emis',
+        'references'
       ],
       summary: {
         ...foundation.summary,
@@ -852,7 +1399,13 @@ export class EducationPlatformService extends FoundationService {
         certificates: this.certificates.size,
         subscriptions: this.platformSubscriptions.size,
         localizationProfiles: this.localizationProfiles.size,
-        parentalConsents: this.parentalConsents.size
+        parentalConsents: this.parentalConsents.size,
+        lmsCourses: this.lmsCourses.size,
+        lmsEnrollments: this.lmsEnrollments.size,
+        meetings: this.meetings.size,
+        dataQualityIssues: this.dataQualityIssues.size,
+        emisExchanges: this.emisExchanges.size,
+        referenceEntries: this.referenceEntries.size
       }
     };
   }

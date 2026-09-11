@@ -2,9 +2,47 @@ const app = document.querySelector('#app');
 const state = {
   token: window.sessionStorage.getItem('eduplateforme.accessToken'),
   user: null,
+  locale: window.localStorage.getItem('eduplateforme.locale')
+    ?? (navigator.language.toLowerCase().startsWith('en') ? 'en' : 'fr'),
   resources: new Map(),
   references: new Map()
 };
+
+const translations = {
+  en: {
+    dashboard: ['Dashboard', 'Overview'],
+    lms: ['LMS', 'Learning'],
+    meetings: ['Video conferencing', 'Integrations'],
+    dataQuality: ['Data quality', 'Data Quality Center'],
+    emis: ['EMIS', 'Interoperability'],
+    references: ['Reference data', 'Standards'],
+    logout: 'Sign out',
+    activeOrganization: 'Active organization',
+    loading: 'Loading data…',
+    add: 'Add an item',
+    empty: 'No data',
+    emptyHint: 'Use the form above to create the first API-backed item.',
+    noResults: 'No result has been recorded yet.'
+  },
+  fr: {
+    logout: 'Déconnexion',
+    activeOrganization: 'Organisation active',
+    loading: 'Chargement des données…',
+    add: 'Ajouter un élément',
+    empty: 'Aucune donnée',
+    emptyHint: 'Utilisez le formulaire ci-dessus pour créer le premier élément autorisé par l’API.',
+    noResults: 'Aucun résultat enregistré pour le moment.'
+  }
+};
+
+function t(key) {
+  return translations[state.locale]?.[key] ?? translations.fr[key] ?? key;
+}
+
+function moduleLabel(module, part = 0) {
+  return translations[state.locale]?.[module.id]?.[part]
+    ?? (part === 0 ? module.label : module.eyebrow);
+}
 
 const modules = [
   {
@@ -449,6 +487,75 @@ const modules = [
     }]
   },
   {
+    id: 'lms',
+    path: '/lms',
+    label: 'LMS',
+    eyebrow: 'Apprentissage',
+    description: 'Construisez des parcours liés au cursus, suivez la progression et rattachez paiements et justificatifs.',
+    resources: [
+      { id: 'lmsCatalogs', title: 'Catalogues', path: '/lms/catalogs', read: 'lms.read', write: 'lms.write', fields: [['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['description', 'Description', 'textarea', false]], columns: ['code', 'name', 'status'] },
+      { id: 'lmsPrograms', title: 'Programmes LMS', path: '/lms/programs', read: 'lms.read', write: 'lms.write', fields: [['catalogId', 'Catalogue', 'reference', true, '/lms/catalogs', 'name'], ['academicProgramId', 'Programme académique', 'reference', true, '/academics/programs', 'name'], ['code', 'Code', 'text', true], ['title', 'Titre', 'text', true]], columns: ['code', 'title', 'catalogId', 'academicProgramId'] },
+      { id: 'lmsCourses', title: 'Cours LMS', path: '/lms/courses', read: 'lms.read', write: 'lms.write', fields: [['programId', 'Programme LMS', 'reference', true, '/lms/programs', 'title'], ['academicCourseId', 'Cours académique', 'reference', true, '/academics/courses', 'name'], ['code', 'Code', 'text', true], ['title', 'Titre', 'text', true]], columns: ['code', 'title', 'programId'] },
+      { id: 'lmsModules', title: 'Modules', path: '/lms/modules', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', true]], columns: ['position', 'title', 'courseId'] },
+      { id: 'lmsLessons', title: 'Leçons', path: '/lms/lessons', read: 'lms.read', write: 'lms.write', fields: [['moduleId', 'Module', 'reference', true, '/lms/modules', 'title'], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', true]], columns: ['position', 'title', 'moduleId'] },
+      { id: 'lmsResources', title: 'Ressources externes', path: '/lms/resources', read: 'lms.read', write: 'lms.write', fields: [['lessonId', 'Leçon', 'reference', true, '/lms/lessons', 'title'], ['title', 'Titre', 'text', true], ['externalReference', 'Référence externe', 'text', true], ['mediaType', 'Type MIME', 'text', false]], columns: ['title', 'externalReference', 'mediaType'] },
+      { id: 'lmsParticipants', title: 'Participants', path: '/lms/participants', read: 'lms.read', write: 'lms.write', fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['role', 'Rôle', 'select', true, ['learner', 'teacher', 'facilitator', 'observer']]], columns: ['personId', 'role', 'status'] },
+      { id: 'lmsEnrollments', title: 'Inscriptions LMS', path: '/lms/enrollments', read: 'lms.read', write: 'lms.write', fields: [['participantId', 'Participant', 'reference', true, '/lms/participants', 'personId'], ['programId', 'Programme LMS', 'reference', true, '/lms/programs', 'title']], columns: ['participantId', 'programId', 'enrollmentStatus'] },
+      { id: 'lmsProgress', title: 'Progression', path: '/lms/progress', read: 'lms.read', write: 'lms.write', fields: [['enrollmentId', 'Inscription LMS', 'reference', true, '/lms/enrollments', 'id'], ['lessonId', 'Leçon', 'reference', true, '/lms/lessons', 'title'], ['percent', 'Progression (%)', 'number', true]], columns: ['enrollmentId', 'lessonId', 'percent', 'completedAt'] },
+      { id: 'lmsQuizzes', title: 'Quiz', path: '/lms/quizzes', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['title', 'Titre', 'text', true], ['passingScore', 'Seuil (%)', 'number', true]], columns: ['title', 'courseId', 'passingScore'], action: { label: 'Soumettre une tentative', path: '/lms/quizzes/:id/attempts', fields: [['enrollmentId', 'Inscription LMS', 'reference', true, '/lms/enrollments', 'id'], ['answers', 'Réponses par question (JSON)', 'json', true]] } },
+      { id: 'lmsQuestions', title: 'Questions', path: '/lms/questions', read: 'lms.read', write: 'lms.write', fields: [['quizId', 'Quiz', 'reference', true, '/lms/quizzes', 'title'], ['prompt', 'Question', 'textarea', true], ['questionType', 'Type', 'select', true, ['single', 'multiple', 'text']], ['options', 'Choix (JSON)', 'json', false], ['correctAnswer', 'Réponse attendue (JSON ou texte JSON)', 'json', true]], columns: ['quizId', 'prompt', 'questionType'] },
+      { id: 'lmsAttempts', title: 'Tentatives', path: '/lms/attempts', read: 'lms.read', write: 'lms.write', create: false, createOnly: true, fields: [], columns: ['quizId', 'enrollmentId', 'score', 'passed', 'submittedAt'] },
+      { id: 'lmsAssessments', title: 'Examens et évaluations', path: '/lms/assessments', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['title', 'Titre', 'text', true], ['assessmentType', 'Type', 'select', true, ['exam', 'evaluation', 'project']], ['gradingSystemId', 'Barème', 'reference', false, '/grading/systems', 'name']], columns: ['title', 'assessmentType', 'courseId'] },
+      { id: 'lmsPayments', title: 'Paiements liés', path: '/lms/payments', read: 'lms.read', write: 'lms.write', fields: [['enrollmentId', 'Inscription LMS', 'reference', true, '/lms/enrollments', 'id'], ['invoiceId', 'Facture', 'reference', true, '/finance/invoices', 'id'], ['paymentId', 'Paiement', 'reference', false, '/finance/payments', 'receiptReference']], columns: ['enrollmentId', 'invoiceId', 'paymentId'] },
+      { id: 'lmsCertificates', title: 'Credentials de complétion', path: '/lms/certificates', read: 'lms.read', write: 'lms.write', fields: [['enrollmentId', 'Inscription LMS', 'reference', true, '/lms/enrollments', 'id'], ['credentialId', 'Credential', 'reference', true, '/credentials', 'credentialNumber'], ['certificateId', 'Certificat', 'reference', false, '/certificates', 'verificationCode']], columns: ['enrollmentId', 'credentialId', 'certificateId'] }
+    ]
+  },
+  {
+    id: 'meetings',
+    path: '/meetings',
+    label: 'Visioconférence',
+    eyebrow: 'Intégrations',
+    description: 'Réunions fournies par un service externe, avec permissions et états explicites.',
+    resources: [
+      { id: 'meetingProviders', title: 'Fournisseurs', path: '/meetings/providers', read: 'meetings.read', write: 'meetings.write', fields: [['code', 'Code', 'text', true], ['providerType', 'Type', 'text', true], ['adapterKey', 'Adaptateur serveur', 'text', false], ['configuration', 'Configuration non secrète (JSON)', 'json', false]], columns: ['code', 'providerType', 'adapterKey', 'status'] },
+      { id: 'meetings', title: 'Réunions', path: '/meetings', read: 'meetings.read', write: 'meetings.write', fields: [['providerId', 'Fournisseur', 'reference', true, '/meetings/providers', 'code'], ['externalMeetingId', 'ID externe', 'text', true], ['externalUrl', 'URL externe', 'url', true], ['startsAt', 'Date et heure', 'datetime-local', true], ['timezone', 'Fuseau', 'text', true]], columns: ['externalMeetingId', 'startsAt', 'timezone', 'externalState', 'attendanceState'], action: { label: 'Importer la présence', path: '/meetings/:id/attendance/import', fields: [] } },
+      { id: 'meetingParticipants', title: 'Participants et permissions', path: '/meetings/participants', read: 'meetings.read', write: 'meetings.write', fields: [['meetingId', 'Réunion', 'reference', true, '/meetings', 'externalMeetingId'], ['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['role', 'Rôle', 'select', true, ['host', 'presenter', 'attendee']], ['canJoin', 'Peut rejoindre', 'checkbox', false], ['permissions', 'Permissions (JSON)', 'json', false]], columns: ['meetingId', 'personId', 'role', 'canJoin'] }
+    ]
+  },
+  {
+    id: 'dataQuality',
+    path: '/data-quality',
+    label: 'Qualité des données',
+    eyebrow: 'Data Quality Center',
+    description: 'Configurez des contrôles tenant/pays et suivez leur correction et validation.',
+    resources: [
+      { id: 'dataQualityRules', title: 'Règles', path: '/data-quality/rules', read: 'data-quality.read', write: 'data-quality.write', fields: [['code', 'Code', 'text', true], ['countryCode', 'Pays', 'text', false], ['dimension', 'Dimension', 'select', true, ['completeness', 'accuracy', 'validity', 'consistency', 'duplicates', 'references', 'timeliness', 'identifiers']], ['targetResource', 'Ressource', 'text', true], ['field', 'Champ', 'text', true], ['operator', 'Opérateur', 'select', true, ['required', 'unique', 'iso-country', 'pattern', 'reference', 'not-future', 'equals-field']], ['parameters', 'Paramètres (JSON)', 'json', false], ['weight', 'Poids', 'number', true]], columns: ['code', 'dimension', 'targetResource', 'field', 'operator', 'weight'] },
+      { id: 'dataQualityRuns', title: 'Exécutions et scores', path: '/data-quality/runs', createPath: '/data-quality/runs/execute', read: 'data-quality.read', write: 'data-quality.write', fields: [['countryCode', 'Pays', 'text', false], ['targetResource', 'Ressource ciblée', 'text', false]], columns: ['startedAt', 'targetResource', 'runState', 'checked', 'score'], createOnly: true },
+      { id: 'dataQualityIssues', title: 'Problèmes', path: '/data-quality/issues', read: 'data-quality.read', write: 'data-quality.write', create: false, createOnly: true, fields: [], columns: ['dimension', 'targetResource', 'targetId', 'field', 'issueState'], action: { label: (record) => record.issueState === 'corrected' ? 'Valider' : 'Corriger', path: (record) => `/data-quality/issues/${record.id}/${record.issueState === 'corrected' ? 'validate' : 'correct'}`, fields: [['correction', 'Correction (JSON)', 'json', false]], show: (record) => ['open', 'corrected'].includes(record.issueState) } }
+    ]
+  },
+  {
+    id: 'emis',
+    path: '/emis',
+    label: 'EMIS',
+    eyebrow: 'Interopérabilité',
+    description: 'Adaptez les mappings à chaque pays et conservez les tentatives de transmission.',
+    resources: [
+      { id: 'emisProfiles', title: 'Profils et connecteurs', path: '/emis/profiles', read: 'emis.read', write: 'emis.write', fields: [['code', 'Code', 'text', true], ['countryCode', 'Pays', 'text', true], ['adapterKey', 'Adaptateur serveur', 'text', false], ['direction', 'Direction', 'select', true, ['import', 'export', 'bidirectional']], ['configuration', 'Configuration non secrète (JSON)', 'json', false]], columns: ['code', 'countryCode', 'direction', 'adapterKey'] },
+      { id: 'emisMappings', title: 'Mappings', path: '/emis/mappings', read: 'emis.read', write: 'emis.write', fields: [['profileId', 'Profil', 'reference', true, '/emis/profiles', 'code'], ['sourceField', 'Champ source', 'text', true], ['targetField', 'Champ cible', 'text', true], ['valueMapping', 'Mapping valeurs (JSON)', 'json', false]], columns: ['profileId', 'sourceField', 'targetField', 'valueMapping'] },
+      { id: 'emisNationalReferences', title: 'Référentiels nationaux', path: '/emis/national-references', read: 'emis.read', write: 'emis.write', fields: [['profileId', 'Profil', 'reference', true, '/emis/profiles', 'code'], ['catalog', 'Catalogue', 'text', true], ['code', 'Code', 'text', true], ['label', 'Libellé', 'text', true]], columns: ['catalog', 'code', 'label'] },
+      { id: 'emisExchanges', title: 'Imports et exports', path: '/emis/exchanges', read: 'emis.read', write: 'emis.write', fields: [['profileId', 'Profil', 'reference', true, '/emis/profiles', 'code'], ['direction', 'Direction', 'select', true, ['import', 'export']], ['payload', 'Payload structuré (JSON)', 'json', false], ['fileReference', 'Référence fichier', 'text', false]], columns: ['direction', 'exchangeState', 'externalReference', 'validationErrors', 'updatedAt'], action: { label: (record) => ['validation_failed', 'rejected'].includes(record.exchangeState) ? 'Corriger' : ['transport_error', 'pending_external'].includes(record.exchangeState) ? 'Réémettre' : 'Transmettre', path: (record) => `/emis/exchanges/${record.id}/${['validation_failed', 'rejected'].includes(record.exchangeState) ? 'correct' : ['transport_error', 'pending_external'].includes(record.exchangeState) ? 'retransmit' : 'transmit'}`, fields: [['payload', 'Payload corrigé (JSON)', 'json', false], ['fileReference', 'Référence fichier corrigée', 'text', false]], show: (record) => !['sent', 'acknowledged'].includes(record.exchangeState) } }
+    ]
+  },
+  {
+    id: 'references',
+    path: '/references',
+    label: 'Référentiels',
+    eyebrow: 'Standards',
+    description: 'Étendez les catalogues ISO, ISCED et nationaux sans coder de règle pays.',
+    resources: [{ id: 'referenceEntries', title: 'Extensions tenant', path: '/references/entries', read: 'references.read', write: 'references.write', fields: [['catalog', 'Catalogue', 'text', true], ['code', 'Code', 'text', true], ['labels', 'Libellés FR/EN (JSON)', 'json', true], ['countryCode', 'Pays', 'text', false]], columns: ['catalog', 'code', 'labels', 'countryCode', 'standard'] }]
+  },
+  {
     id: 'documents',
     path: '/documents',
     label: 'Documents et mobilité',
@@ -529,7 +636,7 @@ function formatValue(value) {
   if (value === null || value === undefined || value === '') return '—';
   if (typeof value === 'object') return escapeHtml(JSON.stringify(value));
   if (/^\d{4}-\d{2}-\d{2}T/.test(String(value))) {
-    return escapeHtml(new Intl.DateTimeFormat('fr', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)));
+    return escapeHtml(new Intl.DateTimeFormat(state.locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)));
   }
   return escapeHtml(value);
 }
@@ -679,16 +786,17 @@ function shell(content, activeId = 'dashboard') {
         <a class="brand-mark" href="/dashboard">Eduplateforme</a>
         <p class="tenant-name">${escapeHtml(profile ? `${profile.givenName} ${profile.familyName}` : state.user?.username)}</p>
         <nav class="nav-links">
-          <a class="nav-link ${activeId === 'dashboard' ? 'is-active' : ''}" href="/dashboard"><span>Tableau de bord</span><small>Vue d’ensemble</small></a>
-          ${modules.map((module) => `<a class="nav-link ${activeId === module.id ? 'is-active' : ''}" href="${module.path}"><span>${module.label}</span><small>${module.eyebrow}</small></a>`).join('')}
+          <a class="nav-link ${activeId === 'dashboard' ? 'is-active' : ''}" href="/dashboard"><span>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' })}</span><small>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' }, 1)}</small></a>
+          ${modules.map((module) => `<a class="nav-link ${activeId === module.id ? 'is-active' : ''}" href="${module.path}"><span>${moduleLabel(module)}</span><small>${moduleLabel(module, 1)}</small></a>`).join('')}
         </nav>
-        <button id="logout" class="logout-button" type="button">Déconnexion</button>
+        <button id="logout" class="logout-button" type="button">${t('logout')}</button>
       </aside>
       <button class="nav-backdrop" id="nav-backdrop" type="button" hidden aria-label="Fermer la navigation"></button>
       <div class="shell-main">
         <header class="topbar">
           <button class="menu-toggle" id="menu-toggle" type="button" aria-controls="shell-nav" aria-expanded="false">Menu</button>
-          <span class="organization-chip">${escapeHtml(state.user?.organizationId ? 'Organisation active' : 'Configuration requise')}</span>
+          <label><span class="sr-only">Language</span><select id="locale-switch" aria-label="Language"><option value="fr" ${state.locale === 'fr' ? 'selected' : ''}>FR</option><option value="en" ${state.locale === 'en' ? 'selected' : ''}>EN</option></select></label>
+          <span class="organization-chip">${escapeHtml(state.user?.organizationId ? t('activeOrganization') : 'Configuration requise')}</span>
         </header>
         <div id="feedback" class="feedback global-feedback" role="alert" tabindex="-1" hidden></div>
         ${content}
@@ -713,6 +821,9 @@ function fieldInput(field, record = {}) {
     const serialized = value && typeof value === 'object' ? JSON.stringify(value) : value;
     return `<label class="form-wide">${label}<textarea name="${name}" ${required ? 'required' : ''}>${escapeHtml(serialized)}</textarea></label>`;
   }
+  if (type === 'checkbox') {
+    return `<label>${label}<input name="${name}" type="checkbox" ${value ? 'checked' : ''}></label>`;
+  }
   let normalizedValue = value;
   if (type === 'datetime-local' && value) normalizedValue = String(value).slice(0, 16);
   return `<label>${label}<input name="${name}" type="${type}" value="${escapeHtml(normalizedValue)}" ${required ? 'required' : ''}></label>`;
@@ -726,7 +837,7 @@ function resourceSection(resource) {
       ${can(resource.write) && resource.action && (!resource.action.show || resource.action.show(record)) ? `
         <form class="inline-action-form" data-record-action="${resource.id}" data-id="${escapeHtml(record.id)}">
           ${resource.action.fields.map((field) => fieldInput(field)).join('')}
-          <button class="secondary-button" type="submit">${resource.action.label}</button>
+          <button class="secondary-button" type="submit">${typeof resource.action.label === 'function' ? resource.action.label(record) : resource.action.label}</button>
         </form>` : ''}
       ${resource.history !== false ? `<div class="row-actions"><button type="button" data-action="history" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Historique</button>${can(resource.write) && !resource.createOnly ? `<button type="button" data-action="edit" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Modifier</button><button class="danger-link" type="button" data-action="archive" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Archiver</button>` : ''}</div><div class="record-history" aria-live="polite"></div>` : ''}
     </article>`).join('');
@@ -734,21 +845,25 @@ function resourceSection(resource) {
     <section class="surface-card resource-section" id="resource-${resource.id}">
       <div class="section-header"><div><p class="section-label">${payload.page.total} élément(s)</p><h2>${resource.title}</h2></div></div>
       ${resource.summary ? `<p class="resource-summary" role="status">${escapeHtml(resource.summary(payload.items))}</p>` : ''}
-      ${can(resource.write) ? `
+      ${can(resource.write) && resource.create !== false ? `
         <details class="editor-panel">
-          <summary>Ajouter un élément</summary>
+          <summary>${t('add')}</summary>
           <form class="form-grid resource-form" data-resource="${resource.id}">
             <input type="hidden" name="_recordId">
             ${resource.fields.map((field) => fieldInput(field)).join('')}
             <div class="form-actions form-wide"><button class="primary-button" type="submit">Enregistrer</button><button type="reset" class="secondary-button">Annuler</button></div>
           </form>
         </details>` : ''}
-      <div class="data-grid">${rows || '<div class="empty-state"><h3>Aucune donnée</h3><p>Utilisez le formulaire ci-dessus pour créer le premier élément autorisé par l’API.</p></div>'}</div>
+      <div class="data-grid">${rows || `<div class="empty-state"><h3>${t('empty')}</h3><p>${resource.create === false ? t('noResults') : t('emptyHint')}</p></div>`}</div>
     </section>`;
 }
 
 async function loadReferences(module) {
-  const paths = [...new Set(module.resources.flatMap((resource) => resource.fields.filter((field) => field[2] === 'reference').map((field) => field[4])))];
+  const paths = [...new Set(module.resources.flatMap((resource) =>
+    [...resource.fields, ...(resource.action?.fields ?? [])]
+      .filter((field) => field[2] === 'reference')
+      .map((field) => field[4])
+  ))];
   await Promise.all(paths.map(async (path) => {
     if (state.references.has(path)) return;
     state.references.set(path, await apiRequest(`${path}?limit=200`));
@@ -756,7 +871,7 @@ async function loadReferences(module) {
 }
 
 async function modulePage(module) {
-  app.innerHTML = shell(`<main class="content-stack"><section class="page-heading"><p class="section-label">${module.eyebrow}</p><h1>${module.label}</h1><p>${module.description}</p></section><section class="surface-card loading-card">Chargement des données…</section></main>`, module.id);
+  app.innerHTML = shell(`<main class="content-stack"><section class="page-heading"><p class="section-label">${moduleLabel(module, 1)}</p><h1>${moduleLabel(module)}</h1><p>${module.description}</p></section><section class="surface-card loading-card">${t('loading')}</section></main>`, module.id);
   bindShell();
   try {
     await loadReferences(module);
@@ -767,7 +882,7 @@ async function modulePage(module) {
         state.resources.set(resource.id, { items: [], page: { total: 0 } });
       }
     }));
-    app.innerHTML = shell(`<main class="content-stack"><section class="page-heading"><p class="section-label">${module.eyebrow}</p><h1>${module.label}</h1><p>${module.description}</p></section>${module.resources.map(resourceSection).join('')}</main>`, module.id);
+    app.innerHTML = shell(`<main class="content-stack"><section class="page-heading"><p class="section-label">${moduleLabel(module, 1)}</p><h1>${moduleLabel(module)}</h1><p>${module.description}</p></section>${module.resources.map(resourceSection).join('')}</main>`, module.id);
     bindShell();
     bindResources(module);
   } catch (error) {
@@ -815,6 +930,11 @@ function bindShell() {
   };
   toggle?.addEventListener('click', () => setOpen(navigation?.getAttribute('data-open') !== 'true'));
   backdrop?.addEventListener('click', () => setOpen(false));
+  document.querySelector('#locale-switch')?.addEventListener('change', (event) => {
+    state.locale = event.target.value;
+    window.localStorage.setItem('eduplateforme.locale', state.locale);
+    window.location.reload();
+  });
   document.querySelector('#logout')?.addEventListener('click', async () => {
     try {
       await apiRequest('/auth/logout', { method: 'DELETE', body: '{}' });
@@ -843,10 +963,11 @@ function bindResources(module) {
           const value = formData.get(name);
           if (type === 'json' && value) return [name, JSON.parse(value)];
           if (type === 'number' && value !== '') return [name, Number(value)];
+          if (type === 'checkbox') return [name, form.elements[name].checked];
           return [name, value];
         }).filter(([, value]) => value !== ''));
         if (resource.id !== 'organizations') body.organizationId = state.user.organizationId;
-        await apiRequest(recordId ? `${resource.path}/${recordId}` : resource.path, {
+        await apiRequest(recordId ? `${resource.path}/${recordId}` : (resource.createPath ?? resource.path), {
           method: recordId ? 'PUT' : 'POST',
           body: JSON.stringify(body)
         });
@@ -863,20 +984,28 @@ function bindResources(module) {
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const resource = byId.get(form.dataset.recordAction);
+      const record = state.resources.get(resource.id).items.find((item) => item.id === form.dataset.id);
       const formData = new FormData(form);
       const body = Object.fromEntries(resource.action.fields.map(([name, , type]) => {
         const value = formData.get(name);
         if (type === 'json' && value) return [name, JSON.parse(value)];
         if (type === 'number' && value !== '') return [name, Number(value)];
+        if (type === 'checkbox') return [name, form.elements[name].checked];
         return [name, value];
       }).filter(([, value]) => value !== ''));
       if (resource.action.idField) body[resource.action.idField] = form.dataset.id;
-      const actionPath = resource.action.path.replace(':id', encodeURIComponent(form.dataset.id));
+      const actionTemplate = typeof resource.action.path === 'function'
+        ? resource.action.path(record)
+        : resource.action.path;
+      const actionPath = actionTemplate.replace(':id', encodeURIComponent(form.dataset.id));
       const button = form.querySelector('button[type="submit"]');
       button.disabled = true;
       try {
         await apiRequest(actionPath, { method: 'POST', body: JSON.stringify(body) });
-        notification(`${resource.action.label} : opération enregistrée.`);
+        const actionLabel = typeof resource.action.label === 'function'
+          ? resource.action.label(record)
+          : resource.action.label;
+        notification(`${actionLabel} : opération enregistrée.`);
         await modulePage(module);
       } catch (error) {
         notification(error.message, 'error');
@@ -893,8 +1022,12 @@ function bindResources(module) {
       const form = section.querySelector('form');
       details.open = true;
       form.elements._recordId.value = record.id;
-      for (const [name] of resource.fields) {
-        if (form.elements[name]) form.elements[name].value = record[name] ?? '';
+      for (const [name, , type] of resource.fields) {
+        if (form.elements[name]) {
+          form.elements[name].value = type === 'json' && record[name] != null
+            ? JSON.stringify(record[name])
+            : (record[name] ?? '');
+        }
       }
       details.querySelector('summary').textContent = 'Modifier l’élément';
       form.querySelector('button[type="submit"]').textContent = 'Enregistrer les modifications';
@@ -939,6 +1072,10 @@ async function loadCurrentUser() {
   if (!state.token && !await refreshSession()) return false;
   try {
     state.user = await apiRequest('/auth/me');
+    if (!window.localStorage.getItem('eduplateforme.locale')) {
+      const profile = await apiRequest('/i18n/profile').catch(() => null);
+      state.locale = profile?.language ?? state.user.profile?.preferredLocale ?? state.locale;
+    }
     return true;
   } catch {
     setToken(null);
