@@ -1,9 +1,18 @@
-import { parseJson } from '../middleware/validation.js';
-import { requireActor } from '../middleware/auth.js';
+import { makeCrudHandlers } from './_helpers.js';
 
 export function registerReportRoutes(router, { service }) {
-  router.add('POST', '/reports/cards', async (request) => {
-    const body = await parseJson(request);
-    return Response.json(service.generateReportCard(body, requireActor(request)), { status: 201 });
+  const handlers = makeCrudHandlers({
+    service,
+    resource: 'reports',
+    create: (body, actorId) => service.generateReportCard(body, actorId),
+    readPermission: 'reports.read',
+    writePermission: 'reports.write'
   });
+
+  router.add('POST', '/reports/cards', handlers.create);
+  router.add('GET', '/reports/cards', handlers.list);
+  router.add('GET', '/reports/cards/:id', handlers.get);
+  router.add('PUT', '/reports/cards/:id', handlers.update);
+  router.add('DELETE', '/reports/cards/:id', handlers.remove);
+  router.add('GET', '/reports/cards/:id/history', handlers.history);
 }

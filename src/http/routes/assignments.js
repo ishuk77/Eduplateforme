@@ -1,19 +1,33 @@
 import { parseJson } from '../middleware/validation.js';
-import { requireActor } from '../middleware/auth.js';
+import { authorizeRequest } from '../middleware/auth.js';
+import { makeCrudHandlers } from './_helpers.js';
 
 export function registerAssignmentRoutes(router, { service }) {
-  router.add('POST', '/assignments', async (request) => {
-    const body = await parseJson(request);
-    return Response.json(service.createAssignment(body, requireActor(request)), { status: 201 });
+  const handlers = makeCrudHandlers({
+    service,
+    resource: 'assignments',
+    create: (body, actorId) => service.createAssignment(body, actorId),
+    readPermission: 'assignments.read',
+    writePermission: 'assignments.write'
   });
+
+  router.add('POST', '/assignments', handlers.create);
+  router.add('GET', '/assignments', handlers.list);
+  router.add('GET', '/assignments/:id', handlers.get);
+  router.add('PUT', '/assignments/:id', handlers.update);
+  router.add('DELETE', '/assignments/:id', handlers.remove);
+  router.add('GET', '/assignments/:id/history', handlers.history);
 
   router.add('POST', '/assignments/submissions', async (request) => {
     const body = await parseJson(request);
-    return Response.json(service.submitAssignment(body, requireActor(request)), { status: 201 });
+    const identity = authorizeRequest(request, service, { organizationId: body.organizationId, permissions: ['assignments.write'] });
+    return Response.json(service.submitAssignment(body, identity.actorId), { status: 201 });
   });
 
   router.add('POST', '/assignments/submissions/grade', async (request) => {
     const body = await parseJson(request);
-    return Response.json(service.gradeSubmission(body.submissionId, body, requireActor(request)), { status: 201 });
+    const submission = service.assignmentSubmissions.get(body.submissionId);
+    const identity = authorizeRequest(request, service, { organizationId: submission?.organizationId ?? body.organizationId, permissions: ['assignments.write'] });
+    return Response.json(service.gradeSubmission(body.submissionId, body, identity.actorId), { status: 201 });
   });
 }

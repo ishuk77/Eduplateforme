@@ -1,10 +1,13 @@
 import { parsePagination } from '../middleware/validation.js';
+import { authorizeRequest } from '../middleware/auth.js';
 
 export function registerAuditRoutes(router, { service }) {
-  router.add('GET', '/audit/events', async (_request, url) => {
-    return Response.json(service.getAuditTrail({
-      organizationId: url.searchParams.get('organizationId') ?? null,
-      ...parsePagination(url)
-    }));
-  });
+  const handler = async (request, url) => {
+    const organizationId = url.searchParams.get('organizationId') ?? null;
+    authorizeRequest(request, service, { organizationId, permissions: ['audit.read'] });
+    return Response.json(service.getAuditTrail({ organizationId, ...parsePagination(url) }));
+  };
+
+  router.add('GET', '/audit/events', handler);
+  router.add('GET', '/audit/trail', handler);
 }

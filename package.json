@@ -7,7 +7,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:integration": "node --test test/integration/*.test.js"
   },
   "repository": {
     "type": "git",
@@ -22,5 +23,10 @@
   "license": "ISC",
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "3.0.2",
+    "pg": "8.16.3",
+    "zod": "3.25.76"
   }
 }

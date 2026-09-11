@@ -1,5 +1,10 @@
-import { createEducationPlatformService } from '../services/education-platform-service.js';
+import { readFile } from 'node:fs/promises';
+import { extname, join, normalize, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { createPersistentEducationPlatformService } from '../services/persistent-education-platform-service.js';
 import { handleHttpError } from './middleware/error-handling.js';
+import { enforceRateLimit } from './middleware/auth.js';
 import { createRouter } from './routes/_router.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerUserRoutes } from './routes/users.js';
@@ -22,57 +27,87 @@ import { registerSubscriptionRoutes } from './routes/subscriptions.js';
 import { registerI18nRoutes } from './routes/i18n.js';
 import { registerSecurityRoutes } from './routes/security.js';
 import { registerAuditRoutes } from './routes/audit.js';
+import { modules, resolveModule } from '../modules.js';
+import { renderAppShell } from '../template.js';
+import { ApiError } from '../shared/errors.js';
+
+const currentDirectoryPath = dirname(fileURLToPath(import.meta.url));
+const publicDirectoryPath = join(currentDirectoryPath, '../../public');
+const contentTypes = {
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8'
+};
+
+function getCorsOrigin(request) {
+  const requestOrigin = request.headers.get('origin');
+  const allowedOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
+  if (!requestOrigin) {
+    return allowedOrigin;
+  }
+  if (requestOrigin !== allowedOrigin) {
+    throw new ApiError('CORS_FORBIDDEN', 'Origin is not allowed.', 403);
+  }
+  return requestOrigin;
+}
+
+function withSecurityHeaders(response, corsOrigin) {
+  const headers = new Headers(response.headers);
+  headers.set('access-control-allow-origin', corsOrigin);
+  headers.set('access-control-allow-headers', 'authorization, content-type, x-actor-id');
+  headers.set('access-control-allow-methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  headers.set('vary', 'Origin');
+  headers.set('x-content-type-options', 'nosniff');
+  return new Response(response.body, { status: response.status, headers });
+}
+
+async function serveStaticAsset(pathname) {
+  const relativePath = pathname.replace(/^\/+/, '');
+  const assetPath = normalize(join(publicDirectoryPath, relativePath));
+  if (!assetPath.startsWith(publicDirectoryPath)) {
+    throw new ApiError('FORBIDDEN', 'Forbidden', 403);
+  }
+
+  try {
+    const asset = await readFile(assetPath);
+    return new Response(asset, {
+      status: 200,
+      headers: {
+        'content-type': contentTypes[extname(assetPath)] ?? 'application/octet-stream',
+        'cache-control': 'no-cache'
+      }
+    });
+  } catch {
+    return Response.json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, { status: 404 });
+  }
+}
 
 function createOpenApiDescription() {
   return {
     openapi: '3.0.3',
     info: {
       title: 'Eduplateforme API',
-      version: '1.0.0'
+      version: '2.0.0'
     },
     paths: {
-      '/health': { get: { summary: 'Health check' } },
-      '/meta/foundation': { get: { summary: 'Foundation and module metadata' } },
-      '/meta/openapi': { get: { summary: 'OpenAPI summary' } },
-      '/organizations': { post: { summary: 'Create organization' } },
-      '/users': { post: { summary: 'Register person' } },
-      '/accounts': { post: { summary: 'Open user account' } },
-      '/academics/learners': { post: { summary: 'Create learner' } },
-      '/academics/years': { post: { summary: 'Create academic year' } },
-      '/academics/programs': { post: { summary: 'Create program' } },
-      '/academics/classes': { post: { summary: 'Create class' } },
-      '/academics/enrollments': { post: { summary: 'Create enrollment' } },
-      '/grading/systems': { post: { summary: 'Configure grading system' } },
-      '/grading/grades': { post: { summary: 'Record grade' }, get: { summary: 'List grades' } },
-      '/grading/average': { get: { summary: 'Calculate learner average' } },
-      '/attendance/records': { post: { summary: 'Record attendance' } },
-      '/attendance/rate': { get: { summary: 'Get attendance rate' } },
-      '/scheduling/entries': { post: { summary: 'Create schedule entry' } },
-      '/assignments': { post: { summary: 'Create assignment' } },
-      '/assignments/submissions': { post: { summary: 'Submit assignment' } },
-      '/assignments/submissions/grade': { post: { summary: 'Grade submission' } },
-      '/communications/threads': { post: { summary: 'Create thread' } },
-      '/communications/messages': { post: { summary: 'Post message' } },
-      '/finance/fees': { post: { summary: 'Configure fee' } },
-      '/finance/invoices': { post: { summary: 'Create invoice' } },
-      '/finance/payments': { post: { summary: 'Record payment' } },
-      '/reports/cards': { post: { summary: 'Generate report card' } },
-      '/discipline/records': { post: { summary: 'Record discipline event' } },
-      '/notifications': { post: { summary: 'Create notification' } },
-      '/notifications/sent': { post: { summary: 'Mark notification as sent' } },
-      '/calendar/events': { post: { summary: 'Create calendar event' } },
-      '/virtual-schools': { post: { summary: 'Create virtual school' } },
-      '/virtual-schools/trainings': { post: { summary: 'Create paid training' } },
-      '/certificates': { post: { summary: 'Issue certificate' } },
-      '/subscriptions/platform': { post: { summary: 'Create platform subscription' } },
-      '/i18n/profile': { post: { summary: 'Set localization profile' } },
-      '/security/parental-consents': { post: { summary: 'Record parental consent' } },
-      '/audit/events': { get: { summary: 'List audit events' } }
+      '/auth/login': { post: { summary: 'Authenticate with username and password' } },
+      '/auth/refresh': { post: { summary: 'Refresh an access token' } },
+      '/auth/logout': { delete: { summary: 'Revoke a refresh token' } },
+      '/auth/me': { get: { summary: 'Return the authenticated user' } },
+      '/audit/trail': { get: { summary: 'List audit entries' } },
+      '/grading/grades': { get: { summary: 'List grades' }, post: { summary: 'Create grade' } },
+      '/attendance/records': { get: { summary: 'List attendance records' }, post: { summary: 'Create attendance record' } },
+      '/assignments': { get: { summary: 'List assignments' }, post: { summary: 'Create assignment' } },
+      '/reports/cards': { get: { summary: 'List report cards' }, post: { summary: 'Generate report card' } },
+      '/communications/threads': { get: { summary: 'List threads' }, post: { summary: 'Create thread' } },
+      '/discipline/records': { get: { summary: 'List discipline records' }, post: { summary: 'Create discipline record' } },
+      '/calendar/events': { get: { summary: 'List calendar events' }, post: { summary: 'Create calendar event' } },
+      '/subscriptions/platform': { get: { summary: 'List subscriptions' }, post: { summary: 'Create platform subscription' } }
     }
   };
 }
 
-export function createApp({ foundation = createEducationPlatformService() } = {}) {
+export function createApp({ foundation = createPersistentEducationPlatformService() } = {}) {
   const router = createRouter();
   const context = { service: foundation };
 
@@ -99,34 +134,54 @@ export function createApp({ foundation = createEducationPlatformService() } = {}
   registerAuditRoutes(router, context);
 
   return async function app(request) {
+    let corsOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
     try {
+      enforceRateLimit(request);
+      corsOrigin = getCorsOrigin(request);
       const url = new URL(request.url);
 
+      if (request.method === 'OPTIONS') {
+        return withSecurityHeaders(new Response(null, { status: 204 }), corsOrigin);
+      }
+
+      if (request.method === 'GET' && (url.pathname === '/styles.css' || url.pathname === '/app.js' || url.pathname === '/manifest.webmanifest')) {
+        return withSecurityHeaders(await serveStaticAsset(url.pathname), corsOrigin);
+      }
+
+      const currentModule = request.method === 'GET' ? resolveModule(url.pathname) : null;
+      if (currentModule) {
+        const html = renderAppShell({ currentModule, modules, platform: foundation.describePlatform() });
+        return withSecurityHeaders(new Response(html, {
+          status: 200,
+          headers: { 'content-type': 'text/html; charset=utf-8' }
+        }), corsOrigin);
+      }
+
       if (request.method === 'GET' && url.pathname === '/health') {
-        return Response.json({ status: 'ok' });
+        return withSecurityHeaders(Response.json({ status: 'ok' }), corsOrigin);
       }
 
       if (request.method === 'GET' && url.pathname === '/meta/foundation') {
-        return Response.json(foundation.describePlatform());
+        return withSecurityHeaders(Response.json(foundation.describePlatform()), corsOrigin);
       }
 
       if (request.method === 'GET' && url.pathname === '/meta/invariants') {
         const description = foundation.describePlatform();
-        return Response.json({ scope: description.scope, invariants: description.invariants });
+        return withSecurityHeaders(Response.json({ scope: description.scope, invariants: description.invariants }), corsOrigin);
       }
 
       if (request.method === 'GET' && url.pathname === '/meta/openapi') {
-        return Response.json(createOpenApiDescription());
+        return withSecurityHeaders(Response.json(createOpenApiDescription()), corsOrigin);
       }
 
       const routed = await router.dispatch(request);
       if (routed) {
-        return routed;
+        return withSecurityHeaders(routed, corsOrigin);
       }
 
-      return Response.json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, { status: 404 });
+      return withSecurityHeaders(Response.json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, { status: 404 }), corsOrigin);
     } catch (error) {
-      return handleHttpError(error);
+      return withSecurityHeaders(handleHttpError(error), corsOrigin);
     }
   };
 }

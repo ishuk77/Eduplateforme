@@ -1,9 +1,18 @@
-import { parseJson } from '../middleware/validation.js';
-import { requireActor } from '../middleware/auth.js';
+import { makeCrudHandlers } from './_helpers.js';
 
 export function registerDisciplineRoutes(router, { service }) {
-  router.add('POST', '/discipline/records', async (request) => {
-    const body = await parseJson(request);
-    return Response.json(service.recordDiscipline(body, requireActor(request)), { status: 201 });
+  const handlers = makeCrudHandlers({
+    service,
+    resource: 'discipline',
+    create: (body, actorId) => service.recordDiscipline(body, actorId),
+    readPermission: 'discipline.read',
+    writePermission: 'discipline.write'
   });
+
+  router.add('POST', '/discipline/records', handlers.create);
+  router.add('GET', '/discipline/records', handlers.list);
+  router.add('GET', '/discipline/records/:id', handlers.get);
+  router.add('PUT', '/discipline/records/:id', handlers.update);
+  router.add('DELETE', '/discipline/records/:id', handlers.remove);
+  router.add('GET', '/discipline/records/:id/history', handlers.history);
 }

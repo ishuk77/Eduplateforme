@@ -1,22 +1,22 @@
 const overviewPillars = [
   {
     title: 'Responsive foundation',
-    detail: 'Mobile-first layout primitives keep the shell usable on phones, tablets, and desktop browsers from the first iteration.',
+    detail: 'Mobile-first layout primitives keep the shell usable on phones, tablets, and desktop browsers.',
   },
   {
     title: 'Modular domain map',
-    detail: 'Core future areas stay separated so the application can grow with clear boundaries instead of a monolithic interface.',
+    detail: 'Core areas stay isolated so each backend capability can evolve behind shared navigation and security.',
   },
   {
-    title: 'Extensible delivery path',
-    detail: 'The shell can evolve into richer web workflows, a PWA, and eventually mobile-specific packaging without replacing the baseline.',
+    title: 'Live backend integration',
+    detail: 'The shell reads platform metadata and authenticated user context from the same HTTP server that exposes the API.',
   },
 ];
 
 const nextSteps = [
-  'Connect module placeholders to real domain services.',
-  'Introduce authenticated user contexts and tenant-aware data.',
-  'Add progressive enhancement such as offline support and installability.',
+  'Connect dashboards to filtered list endpoints.',
+  'Reuse JWT login state across shell modules.',
+  'Add richer role-specific workflows on top of CRUD APIs.',
 ];
 
 function renderModuleNavigation(currentModule, modules) {
@@ -70,7 +70,7 @@ function renderModuleCards(modules) {
     .join('');
 }
 
-export function renderAppShell({ currentModule, modules }) {
+export function renderAppShell({ currentModule, modules, platform }) {
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -93,8 +93,8 @@ export function renderAppShell({ currentModule, modules }) {
         </nav>
         <section class="surface-card shell-note">
           <p class="section-label">Current objective</p>
-          <h3>First usable app shell</h3>
-          <p>Set up a lightweight front-end baseline that is already comfortable on mobile and ready to grow by domain.</p>
+          <h3>Integrated shell + backend</h3>
+          <p>JWT-secured APIs, SQL-backed persistence, and a shell that reads live platform metadata from the same service.</p>
         </section>
       </aside>
 
@@ -121,8 +121,8 @@ export function renderAppShell({ currentModule, modules }) {
             </div>
             <div class="hero-panel">
               <span class="status-chip">Responsive shell</span>
-              <span class="status-chip">Placeholder routes</span>
-              <span class="status-chip">PWA-ready path</span>
+              <span class="status-chip">SQL persistence</span>
+              <span class="status-chip">JWT security</span>
             </div>
           </section>
 
@@ -135,13 +135,28 @@ export function renderAppShell({ currentModule, modules }) {
             ${renderHighlights('Suggested next milestones', nextSteps)}
           </section>
 
+          <section class="surface-card" id="platform-summary" data-modules="${platform.modules.length}">
+            <div class="section-header">
+              <div>
+                <p class="section-label">Live platform status</p>
+                <h2>Backend foundation summary</h2>
+              </div>
+              <p class="section-copy" id="auth-status">Anonymous shell context</p>
+            </div>
+            <div class="module-grid" id="summary-grid">
+              <article class="module-card"><p class="section-label">Scope</p><h3>${platform.scope}</h3><p>${platform.modules.length} modules advertised by the backend foundation.</p></article>
+              <article class="module-card"><p class="section-label">Organizations</p><h3>${platform.summary.organizations}</h3><p>Tenant records currently persisted by the backend.</p></article>
+              <article class="module-card"><p class="section-label">Audit events</p><h3>${platform.summary.events}</h3><p>Ordered events captured from domain and security actions.</p></article>
+            </div>
+          </section>
+
           <section class="surface-card">
             <div class="section-header">
               <div>
                 <p class="section-label">Domain navigation</p>
-                <h2>Future application areas</h2>
+                <h2>Application areas</h2>
               </div>
-              <p class="section-copy">Each area is intentionally lightweight today and isolated enough to evolve into dedicated workflows later.</p>
+              <p class="section-copy">Each area can now be paired with live CRUD endpoints and organization-scoped authorization.</p>
             </div>
             <div class="module-grid">
               ${renderModuleCards(modules)}

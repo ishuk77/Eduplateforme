@@ -1,26 +1,39 @@
 import { parseJson, parsePagination } from '../middleware/validation.js';
-import { requireActor } from '../middleware/auth.js';
+import { authorizeRequest } from '../middleware/auth.js';
+import { makeCrudHandlers } from './_helpers.js';
 
 export function registerGradingRoutes(router, { service }) {
+  const gradeHandlers = makeCrudHandlers({
+    service,
+    resource: 'grades',
+    create: (body, actorId) => service.recordGrade(body, actorId),
+    readPermission: 'grading.read',
+    writePermission: 'grading.write',
+    listFilters: (url) => ({
+      organizationId: url.searchParams.get('organizationId') ?? null,
+      learnerId: url.searchParams.get('learnerId') ?? undefined,
+      ...parsePagination(url)
+    })
+  });
+
   router.add('POST', '/grading/systems', async (request) => {
     const body = await parseJson(request);
-    return Response.json(service.configureGradingSystem(body, requireActor(request)), { status: 201 });
+    const identity = authorizeRequest(request, service, { organizationId: body.organizationId, permissions: ['grading.write'] });
+    return Response.json(service.configureGradingSystem(body, identity.actorId), { status: 201 });
   });
 
-  router.add('POST', '/grading/grades', async (request) => {
-    const body = await parseJson(request);
-    return Response.json(service.recordGrade(body, requireActor(request)), { status: 201 });
-  });
+  router.add('POST', '/grading/grades', gradeHandlers.create);
+  router.add('GET', '/grading/grades', gradeHandlers.list);
+  router.add('GET', '/grading/grades/:id', gradeHandlers.get);
+  router.add('PUT', '/grading/grades/:id', gradeHandlers.update);
+  router.add('DELETE', '/grading/grades/:id', gradeHandlers.remove);
+  router.add('GET', '/grading/grades/:id/history', gradeHandlers.history);
 
-  router.add('GET', '/grading/grades', async (_request, url) => {
+  router.add('GET', '/grading/average', async (request, url) => {
     const organizationId = url.searchParams.get('organizationId');
-    const learnerId = url.searchParams.get('learnerId');
-    return Response.json(service.listGrades({ organizationId, learnerId, ...parsePagination(url) }));
-  });
-
-  router.add('GET', '/grading/average', async (_request, url) => {
+    authorizeRequest(request, service, { organizationId, permissions: ['grading.read'] });
     return Response.json(service.calculateLearnerAverage({
-      organizationId: url.searchParams.get('organizationId'),
+      organizationId,
       learnerId: url.searchParams.get('learnerId')
     }));
   });
