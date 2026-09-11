@@ -1,0 +1,30 @@
+services:
+  app:
+    image: node:24
+    working_dir: /app
+    command: sh -c "npm install && npm start"
+    volumes:
+      - .:/app
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DB_URL: sqlite:/tmp/eduplateforme/eduplateforme.sqlite
+      JWT_SECRET: ${JWT_SECRET}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      CORS_ORIGIN: http://localhost:3000
+    depends_on:
+      - postgres
+      - redis
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: eduplateforme
+      POSTGRES_USER: eduplateforme
+      POSTGRES_PASSWORD: eduplateforme
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"

@@ -1,0 +1,9 @@
+{
+  "name": "Eduplateforme",
+  "short_name": "Eduplateforme",
+  "description": "Responsive application shell foundation for Eduplateforme.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#eff4ff",
+  "theme_color": "#1d4ed8"
+}
