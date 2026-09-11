@@ -18,6 +18,24 @@ export const modules = [
     highlights: ['Multi-organization hierarchy', 'Governance boundaries', 'Shared services'],
   },
   {
+    id: 'institution',
+    path: '/institution',
+    label: 'Institution & conformité',
+    eyebrow: 'Identité réglementaire',
+    title: 'Institution & conformité',
+    description: 'Gérez les campus, autorisations, accréditations et vérifications publiques sans exposer les données privées.',
+    highlights: ['Campus', 'Autorisations', 'Accréditations', 'Vérification publique'],
+  },
+  {
+    id: 'profiles',
+    path: '/profiles',
+    label: 'Profils métier',
+    eyebrow: 'Responsabilités',
+    title: 'Profils métier',
+    description: 'Séparez les personnes, responsables, professionnels et leurs affectations contextualisées.',
+    highlights: ['Responsables', 'Professionnels', 'Relations', 'Affectations'],
+  },
+  {
     id: 'people',
     path: '/people',
     label: 'People & Identity',
@@ -145,6 +163,15 @@ const moduleLookup = new Map([
     eyebrow: 'Configuration',
     title: 'Créer votre école',
     description: 'Configurez votre premier établissement.',
+    highlights: []
+  }],
+  ['/verify-institution', {
+    id: 'publicVerification',
+    path: '/verify-institution',
+    label: 'Vérifier une institution',
+    eyebrow: 'Registre public',
+    title: 'Vérification institutionnelle',
+    description: 'Consultez uniquement les données publiques de vérification.',
     highlights: []
   }],
   ...modules.map((module) => [module.path, module]),

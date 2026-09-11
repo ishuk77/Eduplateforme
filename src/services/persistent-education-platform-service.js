@@ -16,6 +16,24 @@ import { CredentialRecord, DocumentRecord } from '../domain/documents/documents.
 import { FeeConfiguration, Invoice, Payment } from '../domain/finance/finance.js';
 import { GradeEntry, GradingSystem } from '../domain/grading/grading.js';
 import { LocalizationProfile } from '../domain/i18n/i18n.js';
+import {
+  AcademicLevel,
+  AcademicPeriod,
+  Accreditation,
+  Campus,
+  ContextualPermissionRule,
+  Course,
+  GuardianLearnerRelation,
+  GuardianProfile,
+  InstitutionVerification,
+  LearnerLifecycleEvent,
+  OperatingAuthorization,
+  ProfessionalAssignment,
+  ProfessionalProfile,
+  Subject,
+  AUTHORIZATION_STATUSES,
+  VERIFICATION_STATUSES
+} from '../domain/institutional/institutional.js';
 import { Notification } from '../domain/notifications/notifications.js';
 import { Organization } from '../domain/organizations/organization.js';
 import { Person } from '../domain/people/person.js';
@@ -75,6 +93,20 @@ const COLLECTIONS = {
   localizationProfiles: { hydrate: (value) => new LocalizationProfile(value), keySelector: (value) => value.organizationId },
   platformSubscriptions: { hydrate: (value) => new PlatformSubscription(value), repository: (connection) => new SubscriptionRepository({ connection }) },
   parentalConsents: { hydrate: (value) => ({ ...value }) },
+  campuses: { hydrate: (value) => new Campus(value) },
+  operatingAuthorizations: { hydrate: (value) => new OperatingAuthorization(value) },
+  accreditations: { hydrate: (value) => new Accreditation(value) },
+  institutionVerifications: { hydrate: (value) => new InstitutionVerification(value) },
+  guardianProfiles: { hydrate: (value) => new GuardianProfile(value), sensitive: true },
+  professionalProfiles: { hydrate: (value) => new ProfessionalProfile(value), sensitive: true },
+  guardianLearnerRelations: { hydrate: (value) => new GuardianLearnerRelation(value), sensitive: true },
+  professionalAssignments: { hydrate: (value) => new ProfessionalAssignment(value) },
+  academicPeriods: { hydrate: (value) => new AcademicPeriod(value) },
+  academicLevels: { hydrate: (value) => new AcademicLevel(value) },
+  subjects: { hydrate: (value) => new Subject(value) },
+  courses: { hydrate: (value) => new Course(value) },
+  learnerLifecycleEvents: { hydrate: (value) => new LearnerLifecycleEvent(value), sensitive: true },
+  contextualPermissionRules: { hydrate: (value) => new ContextualPermissionRule(value) },
   events: { hydrate: (value) => new DomainEvent(value), isArray: true }
 };
 
@@ -119,6 +151,21 @@ const RESOURCE_TO_COLLECTION = {
   financeFees: 'fees',
   financeInvoices: 'invoices',
   financePayments: 'payments'
+  ,
+  campuses: 'campuses',
+  operatingAuthorizations: 'operatingAuthorizations',
+  accreditations: 'accreditations',
+  institutionVerifications: 'institutionVerifications',
+  guardianProfiles: 'guardianProfiles',
+  professionalProfiles: 'professionalProfiles',
+  guardianLearnerRelations: 'guardianLearnerRelations',
+  professionalAssignments: 'professionalAssignments',
+  academicPeriods: 'academicPeriods',
+  academicLevels: 'academicLevels',
+  subjects: 'subjects',
+  courses: 'courses',
+  learnerLifecycleEvents: 'learnerLifecycleEvents',
+  contextualPermissionRules: 'contextualPermissionRules'
 };
 
 const RESOURCE_ORGANIZATION_RESOLVER = {
@@ -150,6 +197,10 @@ const TENANT_ADMIN_PERMISSIONS = Object.freeze([
   'certificates.read', 'certificates.write',
   'i18n.read', 'i18n.write',
   'security.read', 'security.write',
+  'institution.read', 'institution.write', 'institution.verify',
+  'profiles.read', 'profiles.write',
+  'lifecycle.read', 'lifecycle.write',
+  'authorization-matrix.read', 'authorization-matrix.write',
   'audit.read'
 ]);
 
@@ -379,6 +430,72 @@ export class PersistentEducationPlatformService extends EducationPlatformService
 
   createEnrollment(input, actorId = null) {
     return this.transactional(() => this.recordCreate('enrollments', super.createEnrollment(input, actorId), actorId, 'enrollment.create'));
+  }
+
+  createInstitutionalRecord(collectionKey, create, actorId, action) {
+    return this.transactional(() => this.recordCreate(collectionKey, create(), actorId, action));
+  }
+
+  createCampus(input, actorId = null) {
+    return this.createInstitutionalRecord('campuses', () => super.createCampus(input, actorId), actorId, 'campus.create');
+  }
+
+  createOperatingAuthorization(input, actorId = null) {
+    return this.createInstitutionalRecord('operatingAuthorizations', () => super.createOperatingAuthorization(input, actorId), actorId, 'operating-authorization.create');
+  }
+
+  createAccreditation(input, actorId = null) {
+    return this.createInstitutionalRecord('accreditations', () => super.createAccreditation(input, actorId), actorId, 'accreditation.create');
+  }
+
+  createInstitutionVerification(input, actorId = null) {
+    return this.createInstitutionalRecord('institutionVerifications', () => super.createInstitutionVerification(input, actorId), actorId, 'institution-verification.create');
+  }
+
+  createGuardianProfile(input, actorId = null) {
+    return this.createInstitutionalRecord('guardianProfiles', () => super.createGuardianProfile(input, actorId), actorId, 'guardian-profile.create');
+  }
+
+  createProfessionalProfile(input, actorId = null) {
+    return this.createInstitutionalRecord('professionalProfiles', () => super.createProfessionalProfile(input, actorId), actorId, 'professional-profile.create');
+  }
+
+  createGuardianLearnerRelation(input, actorId = null) {
+    return this.createInstitutionalRecord('guardianLearnerRelations', () => super.createGuardianLearnerRelation(input, actorId), actorId, 'guardian-learner-relation.create');
+  }
+
+  createProfessionalAssignment(input, actorId = null) {
+    return this.createInstitutionalRecord('professionalAssignments', () => super.createProfessionalAssignment(input, actorId), actorId, 'professional-assignment.create');
+  }
+
+  createAcademicPeriod(input, actorId = null) {
+    return this.createInstitutionalRecord('academicPeriods', () => super.createAcademicPeriod(input, actorId), actorId, 'academic-period.create');
+  }
+
+  createAcademicLevel(input, actorId = null) {
+    return this.createInstitutionalRecord('academicLevels', () => super.createAcademicLevel(input, actorId), actorId, 'academic-level.create');
+  }
+
+  createSubject(input, actorId = null) {
+    return this.createInstitutionalRecord('subjects', () => super.createSubject(input, actorId), actorId, 'subject.create');
+  }
+
+  createCourse(input, actorId = null) {
+    return this.createInstitutionalRecord('courses', () => super.createCourse(input, actorId), actorId, 'course.create');
+  }
+
+  recordLearnerLifecycleEvent(input, actorId = null) {
+    return this.transactional(() => {
+      const learnerBefore = cloneRecord(this.learners.get(input.learnerId));
+      const event = EducationPlatformService.prototype.recordLearnerLifecycleEvent.call(this, input, actorId);
+      this.recordCreate('learnerLifecycleEvents', event, actorId, `learner-lifecycle.${event.eventType}`);
+      this.recordUpdate('learners', learnerBefore, this.learners.get(input.learnerId), actorId, `learner.${event.eventType}`);
+      return event;
+    });
+  }
+
+  createContextualPermissionRule(input, actorId = null) {
+    return this.createInstitutionalRecord('contextualPermissionRules', () => super.createContextualPermissionRule(input, actorId), actorId, 'contextual-permission-rule.create');
   }
 
   registerDocument(input, actorId = null) {
@@ -868,6 +985,123 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     };
   }
 
+  transitionInstitutionalStatus(resource, id, input, actorId = null) {
+    const collectionKey = RESOURCE_TO_COLLECTION[resource];
+    const collection = this[collectionKey];
+    if (!collection?.has(id) || !['operatingAuthorizations', 'accreditations', 'institutionVerifications'].includes(collectionKey)) {
+      throw new ValidationError(`Unknown ${resource}: ${id}`);
+    }
+    this.transitionLocks ??= new Map();
+    const lockKey = `${collectionKey}:${id}`;
+    const previousOperation = this.transitionLocks.get(lockKey) ?? Promise.resolve();
+    const operation = previousOperation.then(() => this.transactional(() => {
+      const entity = collection.get(id);
+      const allowedStatuses = collectionKey === 'institutionVerifications'
+        ? VERIFICATION_STATUSES
+        : AUTHORIZATION_STATUSES;
+      if (!allowedStatuses.includes(input.status)) {
+        throw new ValidationError(`Invalid status transition target: ${input.status}.`);
+      }
+      const allowedTransitions = {
+        draft: ['pending', 'active'],
+        pending: ['active', 'suspended', 'revoked'],
+        active: ['expired', 'suspended', 'revoked'],
+        expired: ['pending', 'active', 'revoked'],
+        suspended: ['active', 'revoked'],
+        revoked: [],
+        UNVERIFIED: ['PENDING_VERIFICATION'],
+        PENDING_VERIFICATION: ['VERIFIED', 'VERIFIED_BY_AUTHORITY', 'UNVERIFIED', 'REVOKED'],
+        VERIFIED: ['VERIFIED_BY_AUTHORITY', 'SUSPENDED', 'REVOKED'],
+        VERIFIED_BY_AUTHORITY: ['SUSPENDED', 'REVOKED'],
+        SUSPENDED: ['VERIFIED', 'VERIFIED_BY_AUTHORITY', 'REVOKED'],
+        REVOKED: []
+      };
+      if (!(allowedTransitions[entity.status] ?? []).includes(input.status)) {
+        throw new ValidationError(`Transition from ${entity.status} to ${input.status} is not allowed.`);
+      }
+      const before = cloneRecord(entity);
+      const changedAt = new Date();
+      entity.history = [
+        ...(entity.history ?? []),
+        {
+          from: entity.status,
+          to: input.status,
+          reason: input.reason ?? null,
+          authority: input.authority ?? null,
+          evidenceReference: input.evidenceReference ?? null,
+          changedAt: changedAt.toISOString(),
+          actorId
+        }
+      ];
+      entity.status = input.status;
+      entity.touch(changedAt);
+      if (collectionKey === 'institutionVerifications' && ['VERIFIED', 'VERIFIED_BY_AUTHORITY'].includes(input.status)) {
+        entity.verifiedAt = input.verifiedAt ?? changedAt.toISOString();
+        entity.authority = input.authority ?? entity.authority;
+      }
+      return this.recordUpdate(collectionKey, before, entity, actorId, `${resource}.transition.${input.status}`);
+    }));
+    this.transitionLocks.set(lockKey, operation.catch(() => {}));
+    return operation;
+  }
+
+  withdrawGuardianLearnerRelation(id, input, actorId = null) {
+    const relation = this.guardianLearnerRelations.get(id);
+    if (!relation) throw new ValidationError(`Unknown guardianLearnerRelations: ${id}`);
+    if (relation.status !== 'active') throw new ValidationError('Guardian relation is not active.');
+    return this.transactional(() => {
+      const before = cloneRecord(relation);
+      relation.status = 'withdrawn';
+      relation.withdrawnAt = new Date();
+      relation.withdrawalReason = input.reason ?? null;
+      relation.touch(relation.withdrawnAt);
+      return this.recordUpdate('guardianLearnerRelations', before, relation, actorId, 'guardian-learner-relation.withdraw');
+    });
+  }
+
+  getPublicInstitutionVerification(publicCode) {
+    const verification = Array.from(this.institutionVerifications.values())
+      .find((candidate) => candidate.publicCode === publicCode);
+    if (!verification) return null;
+    const organization = this.organizations.get(verification.organizationId);
+    if (!organization) return null;
+    return {
+      publicCode: verification.publicCode,
+      status: verification.status,
+      authority: verification.authority,
+      verifiedAt: verification.verifiedAt,
+      validUntil: verification.validUntil,
+      publicNote: verification.publicNote,
+      institution: {
+        displayName: organization.displayName,
+        legalName: organization.legalName,
+        countryCode: organization.countryCode,
+        organizationType: organization.organizationType,
+        operationalStatus: organization.operationalStatus
+      }
+    };
+  }
+
+  isContextuallyAllowed(accountId, { organizationId, resource, action, scopeType = 'organization', scopeId = null }) {
+    const permissionCode = `${resource}.${action}`;
+    const permissions = this.getAccountPermissions(accountId, organizationId);
+    if (!permissions.includes('*') && !permissions.includes(permissionCode)) return false;
+    const account = this.accounts.get(accountId);
+    const roleCodes = new Set(Array.from(this.roleAssignments.values())
+      .filter((assignment) => assignment.personId === account?.personId && assignment.organizationId === organizationId)
+      .map((assignment) => this.roles.get(assignment.roleId)?.code)
+      .filter(Boolean));
+    const matchingRules = Array.from(this.contextualPermissionRules.values()).filter((rule) =>
+      rule.organizationId === organizationId
+      && roleCodes.has(rule.roleCode)
+      && rule.resource === resource
+      && rule.action === action
+      && rule.scopeType === scopeType
+      && (!rule.scopeId || rule.scopeId === scopeId)
+    );
+    return !matchingRules.some((rule) => rule.effect === 'deny');
+  }
+
   getAccountPermissions(accountId, organizationId = null) {
     const account = this.accounts.get(accountId);
     if (!account) {
@@ -1003,13 +1237,34 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     )) {
       throw new ValidationError('Account organization memberships cannot be changed through generic updates.');
     }
+    if (['operatingAuthorizations', 'accreditations', 'institutionVerifications'].includes(resource)
+      && (Object.prototype.hasOwnProperty.call(patch, 'status') || Object.prototype.hasOwnProperty.call(patch, 'history'))) {
+      throw new ValidationError('Status and history must be changed through the dedicated transition workflow.');
+    }
     const entity = collection.get(id);
+    if (resource === 'professionalProfiles' && patch.assignmentOrganizationIds) {
+      for (const organizationId of patch.assignmentOrganizationIds) {
+        this.assertExists(this.organizations, organizationId, 'assignment organization');
+      }
+      if (!patch.assignmentOrganizationIds.includes(entity.organizationId)) {
+        throw new ValidationError('Professional profile must retain its owning organization.');
+      }
+    }
     const immutableReferenceFields = new Set([
       'assignmentId',
       'classId',
       'feeConfigurationId',
       'invoiceId',
       'parentPersonId',
+      'guardianProfileId',
+      'professionalProfileId',
+      'subjectId',
+      'academicPeriodId',
+      'academicYearId',
+      'programId',
+      'campusId',
+      'teacherAssignmentIds',
+      'publicCode',
       'teacherPersonId',
       'virtualSchoolId'
     ]);
@@ -1029,14 +1284,36 @@ export class PersistentEducationPlatformService extends EducationPlatformService
         'learnerId',
         'threadId',
         'authorPersonId'
+        ,
+        'targetId'
       ]);
+      const institutionalCollections = new Set([
+        'campuses',
+        'operatingAuthorizations',
+        'accreditations',
+        'institutionVerifications',
+        'guardianProfiles',
+        'professionalProfiles',
+        'guardianLearnerRelations',
+        'professionalAssignments',
+        'academicPeriods',
+        'academicLevels',
+        'subjects',
+        'courses',
+        'contextualPermissionRules'
+      ]);
+      const candidate = { ...entity };
       for (const [key, value] of Object.entries(patch)) {
         if (!immutableFields.has(key) && key !== 'createdAt') {
-          entity[key] = value;
+          candidate[key] = value;
         }
       }
-      entity.touch?.(new Date());
-      return this.recordUpdate(collectionKey, before, entity, actorId, `${resource}.update`);
+      const validated = institutionalCollections.has(collectionKey)
+        ? hydrateValue(COLLECTIONS[collectionKey], candidate)
+        : Object.assign(entity, candidate);
+      validated.touch?.(new Date());
+      collection.set(id, validated);
+      return this.recordUpdate(collectionKey, before, validated, actorId, `${resource}.update`);
     });
   }
 

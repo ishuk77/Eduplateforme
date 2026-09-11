@@ -21,10 +21,82 @@ const modules = [
         ['displayName', 'Nom affiché', 'text', true],
         ['internalReference', 'Référence interne', 'text', true],
         ['countryCode', 'Code pays', 'text', true],
-        ['organizationType', 'Type', 'text', false]
+        ['organizationType', 'Type', 'text', false],
+        ['nationalInstitutionId', 'Identifiant national', 'text', false],
+        ['registrationNumber', 'Immatriculation', 'text', false],
+        ['taxIdentifier', 'Identifiant fiscal', 'text', false],
+        ['legalForm', 'Forme juridique', 'text', false],
+        ['administrativeAuthority', 'Autorité administrative', 'text', false],
+        ['operationalStatus', 'Statut opérationnel', 'text', false]
       ],
-      columns: ['displayName', 'internalReference', 'countryCode', 'status']
+      columns: ['displayName', 'internalReference', 'nationalInstitutionId', 'registrationNumber', 'operationalStatus', 'status']
     }]
+  },
+  {
+    id: 'institution',
+    path: '/institution',
+    label: 'Institution',
+    eyebrow: 'Conformité',
+    description: 'Gérez séparément sites, autorisations de fonctionnement, accréditations et vérification publique.',
+    resources: [
+      {
+        id: 'campuses', title: 'Sites et campus', path: '/institution/campuses',
+        read: 'institution.read', write: 'institution.write',
+        fields: [['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['campusType', 'Type de site', 'text', false], ['localIdentifier', 'Identifiant local', 'text', false], ['timezone', 'Fuseau horaire', 'text', false]],
+        columns: ['code', 'name', 'campusType', 'localIdentifier', 'status']
+      },
+      {
+        id: 'operatingAuthorizations', title: 'Autorisations de fonctionnement', path: '/institution/operating-authorizations',
+        read: 'institution.read', write: 'institution.write',
+        fields: [['type', 'Type', 'text', true], ['authority', 'Autorité', 'text', true], ['jurisdiction', 'Juridiction', 'text', true], ['reference', 'Référence', 'text', true], ['validFrom', 'Valide du', 'date', false], ['validUntil', 'Valide au', 'date', false], ['evidenceReference', 'Preuve', 'text', false]],
+        columns: ['type', 'authority', 'jurisdiction', 'reference', 'validUntil', 'status']
+      },
+      {
+        id: 'accreditations', title: 'Accréditations', path: '/institution/accreditations',
+        read: 'institution.read', write: 'institution.write',
+        fields: [['accreditationType', 'Type', 'text', true], ['authority', 'Autorité', 'text', true], ['jurisdiction', 'Juridiction', 'text', true], ['targetType', 'Cible', 'select', true, ['institution', 'site', 'program', 'level', 'qualification']], ['targetId', 'Identifiant cible', 'text', true], ['reference', 'Référence', 'text', true], ['validUntil', 'Valide au', 'date', false]],
+        columns: ['accreditationType', 'targetType', 'targetId', 'reference', 'status']
+      },
+      {
+        id: 'institutionVerifications', title: 'Vérification institutionnelle', path: '/institution/verifications',
+        read: 'institution.read', write: 'institution.verify',
+        fields: [['publicCode', 'Code public', 'text', true], ['authority', 'Autorité', 'text', false], ['publicNote', 'Mention publique', 'textarea', false]],
+        columns: ['publicCode', 'status', 'authority', 'verifiedAt', 'validUntil']
+      }
+    ]
+  },
+  {
+    id: 'profiles',
+    path: '/profiles',
+    label: 'Profils métier',
+    eyebrow: 'Responsabilités',
+    description: 'Gérez les profils responsables et professionnels indépendamment des comptes de connexion.',
+    resources: [
+      {
+        id: 'guardianProfiles', title: 'Parents et tuteurs', path: '/profiles/guardians',
+        read: 'profiles.read', write: 'profiles.write',
+        fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['relationshipTypes', 'Types de relation (JSON)', 'json', false], ['preferredContactChannels', 'Canaux préférés (JSON)', 'json', false]],
+        columns: ['personId', 'relationshipTypes', 'preferredContactChannels', 'status']
+      },
+      {
+        id: 'professionalProfiles', title: 'Enseignants et staff', path: '/profiles/professionals',
+        read: 'profiles.read', write: 'profiles.write',
+        fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['professionalType', 'Métier', 'select', true, ['teacher', 'professor', 'trainer', 'staff']], ['specialties', 'Spécialités (JSON)', 'json', false], ['qualifications', 'Qualifications (JSON)', 'json', false], ['assignmentOrganizationIds', 'Organisations autorisées (JSON)', 'json', false]],
+        columns: ['personId', 'professionalType', 'specialties', 'qualifications', 'assignmentOrganizationIds', 'status']
+      },
+      {
+        id: 'guardianLearnerRelations', title: 'Relations responsable-apprenant', path: '/profiles/guardian-relations',
+        read: 'profiles.read', write: 'profiles.write',
+        fields: [['guardianProfileId', 'Responsable', 'reference', true, '/profiles/guardians', 'personId'], ['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['relationship', 'Relation', 'text', true], ['permissions', 'Permissions (JSON)', 'json', false]],
+        columns: ['guardianProfileId', 'learnerId', 'relationship', 'permissions', 'status']
+      },
+      {
+        id: 'professionalAssignments', title: 'Affectations professionnelles', path: '/profiles/professional-assignments',
+        read: 'profiles.read', write: 'profiles.write',
+        fields: [['professionalProfileId', 'Profil', 'reference', true, '/profiles/professionals', 'personId'], ['campusId', 'Campus', 'reference', false, '/institution/campuses', 'name'], ['roleTitle', 'Fonction', 'text', true], ['employmentType', 'Contrat', 'text', false], ['startsOn', 'Début', 'date', true], ['endsOn', 'Fin', 'date', false]],
+        columns: ['professionalProfileId', 'campusId', 'roleTitle', 'startsOn', 'endsOn', 'status']
+      }
+    ]
   },
   {
     id: 'people',
@@ -87,6 +159,37 @@ const modules = [
           ['enrollmentReference', 'Référence', 'text', false]
         ],
         columns: ['enrollmentReference', 'personId', 'classId', 'status']
+      },
+      {
+        id: 'academicPeriods', title: 'Périodes', path: '/academics/periods',
+        read: 'academics.read', write: 'academics.write',
+        fields: [['academicYearId', 'Année scolaire', 'reference', true, '/academics/years', 'name'], ['periodType', 'Type', 'select', true, ['semester', 'trimester']], ['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['startsOn', 'Début', 'date', true], ['endsOn', 'Fin', 'date', true]],
+        columns: ['code', 'name', 'periodType', 'startsOn', 'endsOn']
+      },
+      {
+        id: 'academicLevels', title: 'Niveaux et spécialités', path: '/academics/levels',
+        read: 'academics.read', write: 'academics.write',
+        fields: [['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['specialization', 'Spécialisation', 'text', false], ['creditsRequired', 'Crédits requis', 'number', false]],
+        columns: ['code', 'name', 'specialization', 'creditsRequired']
+      },
+      {
+        id: 'subjects', title: 'Matières', path: '/academics/subjects',
+        read: 'academics.read', write: 'academics.write',
+        fields: [['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['description', 'Description', 'textarea', false], ['defaultCredits', 'Crédits', 'number', false]],
+        columns: ['code', 'name', 'defaultCredits', 'status']
+      },
+      {
+        id: 'courses', title: 'Cours', path: '/academics/courses',
+        read: 'academics.read', write: 'academics.write',
+        fields: [['subjectId', 'Matière', 'reference', true, '/academics/subjects', 'name'], ['academicPeriodId', 'Période', 'reference', true, '/academics/periods', 'name'], ['classId', 'Classe', 'reference', false, '/academics/classes', 'name'], ['programId', 'Programme', 'reference', false, '/academics/programs', 'name'], ['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['teacherAssignmentIds', 'Affectations enseignantes (JSON)', 'json', false], ['credits', 'Crédits', 'number', false]],
+        columns: ['code', 'name', 'subjectId', 'academicPeriodId', 'credits']
+      },
+      {
+        id: 'learnerLifecycleEvents', title: 'Parcours longitudinal', path: '/academics/lifecycle-events',
+        read: 'lifecycle.read', write: 'lifecycle.write',
+        fields: [['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['eventType', 'Événement', 'select', true, ['admission', 'enrollment', 'promotion', 'repetition', 'class_change', 'program_change', 'suspension', 'resumption', 'withdrawal', 'expulsion', 'graduation', 'certification', 'death', 'archiving']], ['authority', 'Autorité', 'text', true], ['reason', 'Motif', 'textarea', false], ['evidenceReference', 'Preuve', 'text', false], ['previousContext', 'Ancien contexte (JSON)', 'json', false], ['newContext', 'Nouveau contexte (JSON)', 'json', false]],
+        columns: ['occurredAt', 'learnerId', 'eventType', 'authority', 'reason'],
+        createOnly: true
       }
     ]
   },
@@ -483,6 +586,7 @@ function landing() {
           <div class="hero-actions">
             <a class="primary-button" href="/register">Créer mon école</a>
             <a class="secondary-button" href="/login">J’ai déjà un compte</a>
+            <a class="secondary-button" href="/verify-institution">Vérifier une institution</a>
           </div>
         </div>
         <div class="landing-panel surface-card">
@@ -556,6 +660,10 @@ function fieldInput(field, record = {}) {
   }
   if (type === 'textarea') {
     return `<label class="form-wide">${label}<textarea name="${name}" ${required ? 'required' : ''}>${escapeHtml(value)}</textarea></label>`;
+  }
+  if (type === 'json') {
+    const serialized = value && typeof value === 'object' ? JSON.stringify(value) : value;
+    return `<label class="form-wide">${label}<textarea name="${name}" ${required ? 'required' : ''}>${escapeHtml(serialized)}</textarea></label>`;
   }
   let normalizedValue = value;
   if (type === 'datetime-local' && value) normalizedValue = String(value).slice(0, 16);
@@ -677,14 +785,19 @@ function bindResources(module) {
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const resource = byId.get(form.dataset.resource);
-      const formData = new FormData(form);
-      const recordId = formData.get('_recordId');
-      const body = Object.fromEntries(resource.fields.map(([name]) => [name, formData.get(name)]).filter(([, value]) => value !== ''));
-      if (resource.id !== 'organizations') body.organizationId = state.user.organizationId;
       const button = form.querySelector('button[type="submit"]');
       button.disabled = true;
       button.textContent = 'Enregistrement…';
       try {
+        const formData = new FormData(form);
+        const recordId = formData.get('_recordId');
+        const body = Object.fromEntries(resource.fields.map(([name, , type]) => {
+          const value = formData.get(name);
+          if (type === 'json' && value) return [name, JSON.parse(value)];
+          if (type === 'number' && value !== '') return [name, Number(value)];
+          return [name, value];
+        }).filter(([, value]) => value !== ''));
+        if (resource.id !== 'organizations') body.organizationId = state.user.organizationId;
         await apiRequest(recordId ? `${resource.path}/${recordId}` : resource.path, {
           method: recordId ? 'PUT' : 'POST',
           body: JSON.stringify(body)
@@ -781,14 +894,15 @@ async function loadCurrentUser() {
 
 async function route() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
-  const publicPath = path === '/' || path === '/login' || path === '/register';
+  const publicPath = path === '/' || path === '/login' || path === '/register' || path === '/verify-institution';
+  const authenticationEntryPath = path === '/' || path === '/login' || path === '/register';
   const authenticated = await loadCurrentUser();
 
   if (authenticated && state.user.organizationIds.length === 0 && path !== '/onboarding') {
     window.location.replace('/onboarding');
     return;
   }
-  if (authenticated && state.user.organizationIds.length > 0 && (publicPath || path === '/onboarding')) {
+  if (authenticated && state.user.organizationIds.length > 0 && (authenticationEntryPath || path === '/onboarding')) {
     window.location.replace('/dashboard');
     return;
   }
@@ -799,6 +913,41 @@ async function route() {
 
   if (path === '/') {
     app.innerHTML = landing();
+    return;
+  }
+  if (path === '/verify-institution') {
+    app.innerHTML = `
+      <main class="public-layout">
+        <a class="brand-mark public-brand" href="/">Eduplateforme</a>
+        <section class="auth-card surface-card">
+          <p class="section-label">Registre public</p>
+          <h1>Vérifier une institution</h1>
+          <p class="section-copy">Saisissez le code public fourni par l’établissement. Aucune donnée administrative privée n’est affichée.</p>
+          <div id="feedback" class="feedback" role="alert" tabindex="-1" hidden></div>
+          <form id="verification-form" class="form-grid">
+            <label class="form-wide">Code public<input name="code" required autocomplete="off"></label>
+            <button class="primary-button" type="submit">Vérifier</button>
+          </form>
+          <section id="verification-result" class="verification-result" aria-live="polite"></section>
+        </section>
+      </main>`;
+    document.querySelector('#verification-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const code = new FormData(event.currentTarget).get('code');
+      try {
+        const result = await apiRequest(`/public/institutions/verify/${encodeURIComponent(code)}`);
+        document.querySelector('#verification-result').innerHTML = `
+          <h2>${escapeHtml(result.institution.displayName)}</h2>
+          <dl>
+            <div><dt>Statut</dt><dd>${escapeHtml(result.status)}</dd></div>
+            <div><dt>Nom légal</dt><dd>${escapeHtml(result.institution.legalName)}</dd></div>
+            <div><dt>Pays</dt><dd>${escapeHtml(result.institution.countryCode)}</dd></div>
+            <div><dt>Autorité</dt><dd>${formatValue(result.authority)}</dd></div>
+          </dl>`;
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    });
     return;
   }
   if (path === '/login' || path === '/register') {

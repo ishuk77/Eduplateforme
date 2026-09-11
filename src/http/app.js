@@ -27,6 +27,7 @@ import { registerSubscriptionRoutes } from './routes/subscriptions.js';
 import { registerI18nRoutes } from './routes/i18n.js';
 import { registerSecurityRoutes } from './routes/security.js';
 import { registerAuditRoutes } from './routes/audit.js';
+import { registerInstitutionalRoutes } from './routes/institutional.js';
 import { modules, resolveModule } from '../modules.js';
 import { renderAppShell } from '../template.js';
 import { ApiError } from '../shared/errors.js';
@@ -138,6 +139,22 @@ function createOpenApiDescription() {
       '/discipline/records': { get: { summary: 'List discipline records' }, post: { summary: 'Create discipline record' } },
       '/calendar/events': { get: { summary: 'List calendar events' }, post: { summary: 'Create calendar event' } },
       '/subscriptions/platform': { get: { summary: 'List subscriptions' }, post: { summary: 'Create platform subscription' } }
+      ,
+      '/institution/campuses': { get: { summary: 'List campuses' }, post: { summary: 'Create campus' } },
+      '/institution/operating-authorizations': { get: { summary: 'List operating authorizations' }, post: { summary: 'Create operating authorization' } },
+      '/institution/accreditations': { get: { summary: 'List accreditations' }, post: { summary: 'Create accreditation' } },
+      '/institution/verifications': { get: { summary: 'List verification records' }, post: { summary: 'Create verification record' } },
+      '/public/institutions/verify/{code}': { get: { summary: 'Return the public institution verification allowlist' } },
+      '/profiles/guardians': { get: { summary: 'List guardian profiles' }, post: { summary: 'Create guardian profile' } },
+      '/profiles/professionals': { get: { summary: 'List professional profiles' }, post: { summary: 'Create professional profile' } },
+      '/profiles/guardian-relations': { get: { summary: 'List guardian-to-learner relations' }, post: { summary: 'Create guardian relation' } },
+      '/profiles/professional-assignments': { get: { summary: 'List professional assignments' }, post: { summary: 'Create professional assignment' } },
+      '/academics/periods': { get: { summary: 'List semesters and trimesters' }, post: { summary: 'Create academic period' } },
+      '/academics/levels': { get: { summary: 'List levels and specializations' }, post: { summary: 'Create academic level' } },
+      '/academics/subjects': { get: { summary: 'List subjects' }, post: { summary: 'Create subject' } },
+      '/academics/courses': { get: { summary: 'List contextual courses' }, post: { summary: 'Create course' } },
+      '/academics/lifecycle-events': { get: { summary: 'List longitudinal learner events' }, post: { summary: 'Record learner event' } },
+      '/security/contextual-permissions': { get: { summary: 'List contextual RBAC rules' }, post: { summary: 'Create contextual RBAC rule' } }
     }
   };
 }
@@ -167,6 +184,7 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
   registerI18nRoutes(router, context);
   registerSecurityRoutes(router, context);
   registerAuditRoutes(router, context);
+  registerInstitutionalRoutes(router, context);
 
   return async function app(request) {
     let corsOrigin = null;

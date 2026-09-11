@@ -84,7 +84,7 @@ export function requireIdentity(request, service) {
   return identity;
 }
 
-export function authorizeRequest(request, service, { organizationId = null, permissions = [] } = {}) {
+export function authorizeRequest(request, service, { organizationId = null, permissions = [], context = null } = {}) {
   const identity = requireIdentity(request, service);
   const scopedOrganizationId = organizationId ?? identity.organizationId ?? null;
   if (scopedOrganizationId && !identity.organizationIds.includes(scopedOrganizationId)) {
@@ -95,6 +95,12 @@ export function authorizeRequest(request, service, { organizationId = null, perm
   for (const permission of permissions) {
     if (!scopedPermissions.includes('*') && !scopedPermissions.includes(permission)) {
       throw new ApiError('FORBIDDEN', `Missing permission: ${permission}`, 403);
+    }
+    if (context && !service.isContextuallyAllowed(identity.accountId, {
+      organizationId: scopedOrganizationId,
+      ...context
+    })) {
+      throw new ApiError('FORBIDDEN', 'Contextual permission rule denied this action.', 403);
     }
   }
 
