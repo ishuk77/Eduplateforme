@@ -1,0 +1,25 @@
+{
+  "name": "eduplateforme",
+  "version": "1.0.0",
+  "description": "Fondation Eduplateforme avec persistance SQLite",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "db:migrate": "node src/db/migrate.js",
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://localhost:26831/ishuk77/Eduplateforme"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
+  }
+}
