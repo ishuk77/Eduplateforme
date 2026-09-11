@@ -1,0 +1,14 @@
+{
+  "name": "eduplateforme",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Eduplateforme - base serveur Node.js prête pour Render",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
