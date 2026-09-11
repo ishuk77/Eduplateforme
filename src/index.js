@@ -5,7 +5,10 @@ import { createAppHandler } from './http/app.js';
 const service = PersistentEducationPlatformService.bootstrap({ databasePath: process.env.DATABASE_PATH });
 const server = createServer(createAppHandler(service));
 
-const port = Number(process.env.PORT ?? 3000);
+const port = Number.parseInt(process.env.PORT ?? '3000', 10);
+if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+  throw new Error('Invalid PORT value. Expected an integer between 1 and 65535.');
+}
 server.listen(port, () => {
   console.log(`Eduplateforme server listening on :${port}`);
 });

@@ -38,6 +38,7 @@ export class SqlRepository {
   }
 
   list() {
-    return this.db.prepare(`SELECT * FROM ${this.config.table}`).all();
+    const orderBy = this.config.orderBy ? ` ORDER BY ${this.config.orderBy}` : '';
+    return this.db.prepare(`SELECT * FROM ${this.config.table}${orderBy}`).all();
   }
 }

@@ -178,3 +178,45 @@ test('POST /organizations persiste une organisation', async () => {
     rmSync(temp.dir, { recursive: true, force: true });
   }
 });
+
+test('routes HTTP /health et erreurs JSON/volume', async () => {
+  const temp = createTempDbPath();
+  const service = PersistentEducationPlatformService.bootstrap({ databasePath: temp.dbPath });
+  const server = createServer(createAppHandler(service, { maxBodyBytes: 32 }));
+
+  try {
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const healthResponse = await fetch(`${baseUrl}/health`);
+    assert.equal(healthResponse.status, 200);
+    assert.deepEqual(await healthResponse.json(), { status: 'ok' });
+
+    const invalidJsonResponse = await fetch(`${baseUrl}/organizations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"name": "Broken"'
+    });
+    assert.equal(invalidJsonResponse.status, 400);
+    assert.deepEqual(await invalidJsonResponse.json(), { error: 'INVALID_JSON' });
+
+    const tooLargeResponse = await fetch(`${baseUrl}/organizations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Collège très long', code: 'CODE-EXCESSIVEMENT-LONG' })
+    });
+    assert.equal(tooLargeResponse.status, 413);
+    assert.deepEqual(await tooLargeResponse.json(), { error: 'REQUEST_TOO_LARGE' });
+  } finally {
+    await new Promise((resolve) => {
+      if (!server.listening) {
+        resolve();
+        return;
+      }
+      server.close(resolve);
+    });
+    service.close();
+    rmSync(temp.dir, { recursive: true, force: true });
+  }
+});

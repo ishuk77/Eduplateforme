@@ -8,37 +8,100 @@ export function parseJsonBody(req, maxBodyBytes = 1024 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    let exceeded = false;
+    let settled = false;
+    const ignoreData = () => {};
 
-    req.on('data', (chunk) => {
+    const cleanup = () => {
+      req.removeListener('data', onData);
+      req.removeListener('data', ignoreData);
+      req.removeListener('end', onEnd);
+      req.removeListener('error', onError);
+    };
+
+    const fail = (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const succeed = (payload) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(payload);
+    };
+
+    const onData = (chunk) => {
+      if (exceeded) {
+        return;
+      }
+
       size += chunk.length;
       if (size > maxBodyBytes) {
-        const error = new Error('REQUEST_TOO_LARGE');
-        error.statusCode = 413;
-        req.destroy(error);
+        exceeded = true;
+        req.removeListener('data', onData);
+        req.on('data', ignoreData);
         return;
       }
       chunks.push(chunk);
-    });
+    };
 
-    req.on('end', () => {
+    const onEnd = () => {
+      if (exceeded) {
+        const error = new Error('REQUEST_TOO_LARGE');
+        error.statusCode = 413;
+        fail(error);
+        return;
+      }
+
       if (chunks.length === 0) {
-        resolve({});
+        succeed({});
         return;
       }
 
       try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        succeed(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       } catch {
         const error = new Error('INVALID_JSON');
         error.statusCode = 400;
-        reject(error);
+        fail(error);
       }
-    });
+    };
 
-    req.on('error', (error) => {
-      reject(error.statusCode ? error : Object.assign(new Error('REQUEST_READ_ERROR'), { statusCode: 400 }));
-    });
+    const onError = (error) => {
+      fail(error.statusCode ? error : Object.assign(new Error('REQUEST_READ_ERROR'), { statusCode: 400 }));
+    };
+
+    req.on('data', onData);
+    req.on('end', onEnd);
+    req.on('error', onError);
   });
+}
+
+function mapHttpError(error) {
+  if (error.message === 'REQUEST_TOO_LARGE') {
+    return { statusCode: 413, code: 'REQUEST_TOO_LARGE' };
+  }
+
+  if (error.message === 'INVALID_JSON') {
+    return { statusCode: 400, code: 'INVALID_JSON' };
+  }
+
+  if (error.message.includes('missing required field')) {
+    return { statusCode: 400, code: 'VALIDATION_ERROR' };
+  }
+
+  if (typeof error.code === 'string' && error.code.startsWith('SQLITE_CONSTRAINT')) {
+    return { statusCode: 409, code: 'CONFLICT' };
+  }
+
+  return { statusCode: 400, code: 'BAD_REQUEST' };
 }
 
 export function createAppHandler(service, options = {}) {
@@ -60,8 +123,11 @@ export function createAppHandler(service, options = {}) {
         });
         sendJson(res, 201, { organization });
       } catch (error) {
-        const statusCode = error.statusCode ?? 400;
-        sendJson(res, statusCode, { error: error.message });
+        const mapped = mapHttpError(error);
+        if (mapped.code === 'BAD_REQUEST') {
+          console.error(error);
+        }
+        sendJson(res, mapped.statusCode, { error: mapped.code });
       }
       return;
     }

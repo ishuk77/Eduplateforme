@@ -60,7 +60,8 @@ export function createRepositories(db) {
     auditEvents: new SqlRepository(db, {
       table: 'audit_events',
       columns: ['id', 'organization_id', 'actor_id', 'event_type', 'entity_type', 'entity_id', 'payload_json', 'occurred_at', 'created_at'],
-      required: ['event_type', 'entity_type', 'entity_id', 'occurred_at']
+      required: ['event_type', 'entity_type', 'entity_id', 'occurred_at'],
+      orderBy: 'occurred_at ASC, id ASC'
     })
   };
 }
