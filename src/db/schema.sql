@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS credentials (
   updated_at TEXT NOT NULL,
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT,
   FOREIGN KEY (person_id, organization_id) REFERENCES people(id, organization_id) ON DELETE RESTRICT,
-  FOREIGN KEY (document_id, organization_id, person_id) REFERENCES documents(id, organization_id, person_id) ON DELETE RESTRICT
+  FOREIGN KEY (document_id, organization_id) REFERENCES documents(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS audit_events (

@@ -101,7 +101,16 @@ function mapHttpError(error) {
     return { statusCode: 400, code: 'VALIDATION_ERROR' };
   }
 
-  if (typeof error.code === 'string' && error.code.startsWith('SQLITE_CONSTRAINT')) {
+  if (typeof error?.code === 'string' && error.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+    return { statusCode: 400, code: 'INVALID_REFERENCE' };
+  }
+
+  if (
+    typeof error?.code === 'string' &&
+    (error.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+      error.code === 'SQLITE_CONSTRAINT_PRIMARYKEY' ||
+      error.code === 'SQLITE_CONSTRAINT_TRIGGER')
+  ) {
     return { statusCode: 409, code: 'CONFLICT' };
   }
 
@@ -129,10 +138,15 @@ export function createAppHandler(service, options = {}) {
       } catch (error) {
         const mapped = mapHttpError(error);
         if (mapped.code === 'INTERNAL_ERROR') {
+          const debugDetails =
+            process.env.NODE_ENV === 'production'
+              ? undefined
+              : {
+                  stack: error?.stack
+                };
           console.error(`Unhandled error on ${req.method} ${req.url}`, {
             name: error?.name,
-            message: error?.message,
-            stack: error?.stack
+            ...debugDetails
           });
         }
         sendJson(res, mapped.statusCode, { error: mapped.code });

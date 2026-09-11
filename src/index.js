@@ -9,6 +9,15 @@ const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 if (!Number.isInteger(port) || port <= 0 || port > 65535) {
   throw new Error('Invalid PORT value. Expected an integer between 1 and 65535.');
 }
+
+server.on('error', (error) => {
+  if (!shutdown.serviceClosed) {
+    shutdown.serviceClosed = true;
+    service.close();
+  }
+  throw error;
+});
+
 server.listen(port, () => {
   console.log(`Eduplateforme server listening on :${port}`);
 });

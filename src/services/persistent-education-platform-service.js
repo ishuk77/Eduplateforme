@@ -198,6 +198,16 @@ export class PersistentEducationPlatformService {
   }
 
   registerCredential({ organizationId, personId, documentId = null, kind, issuedAt, expiresAt = null, status = 'active', actorId = null }) {
+    if (documentId) {
+      const document = this.repositories.documents.findById(documentId);
+      if (!document || document.organization_id !== organizationId) {
+        throw new Error('credentials: invalid document reference');
+      }
+      if (document.person_id && document.person_id !== personId) {
+        throw new Error('credentials: document person mismatch');
+      }
+    }
+
     return this.#createWithAudit({
       organizationIdForAudit: organizationId,
       actorId,

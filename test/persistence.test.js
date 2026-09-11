@@ -258,3 +258,34 @@ test('POST /organizations retourne CONFLICT sur code dupliqué', async () => {
     rmSync(temp.dir, { recursive: true, force: true });
   }
 });
+
+test('POST /organizations retourne VALIDATION_ERROR si champs requis manquants', async () => {
+  const temp = createTempDbPath();
+  const service = PersistentEducationPlatformService.bootstrap({ databasePath: temp.dbPath });
+  const server = createServer(createAppHandler(service, { maxBodyBytes: 2048 }));
+
+  try {
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const url = `http://127.0.0.1:${address.port}/organizations`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Sans code' })
+    });
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: 'VALIDATION_ERROR' });
+  } finally {
+    await new Promise((resolve) => {
+      if (!server.listening) {
+        resolve();
+        return;
+      }
+      server.close(resolve);
+    });
+    service.close();
+    rmSync(temp.dir, { recursive: true, force: true });
+  }
+});
