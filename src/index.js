@@ -16,12 +16,23 @@ function shutdown() {
   }
   shutdown.started = true;
 
-  server.close(() => {
-    service.close();
+  const finalize = () => {
+    if (!shutdown.serviceClosed) {
+      shutdown.serviceClosed = true;
+      service.close();
+    }
     process.exit(0);
-  });
+  };
+
+  if (server.listening) {
+    server.close(finalize);
+    return;
+  }
+
+  finalize();
 }
 shutdown.started = false;
+shutdown.serviceClosed = false;
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
