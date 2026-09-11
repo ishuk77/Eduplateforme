@@ -10,9 +10,9 @@ Cette PR pose une **fondation persistante** pragmatique pour Eduplateforme.
 
 ## Base de données
 - Fichier SQLite local par défaut: `data/eduplateforme.sqlite`
-- Schéma: `/home/runner/work/Eduplateforme/Eduplateforme/src/db/schema.sql`
-- Migration: `/home/runner/work/Eduplateforme/Eduplateforme/src/db/migrate.js`
-- Repositories SQL: `/home/runner/work/Eduplateforme/Eduplateforme/src/db/repositories/`
+- Schéma: `src/db/schema.sql`
+- Migration: `src/db/migrate.js`
+- Repositories SQL: `src/db/repositories/`
 
 ### Domaines persistés
 - organizations

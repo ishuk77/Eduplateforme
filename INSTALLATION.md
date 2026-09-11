@@ -1,7 +1,7 @@
 # Installation et exécution
 
 ## Pré-requis
-- Node.js 20+
+- Node.js 22+
 
 ## Installation
 ```bash

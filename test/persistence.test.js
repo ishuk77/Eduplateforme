@@ -1,11 +1,13 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../src/db/connection.js';
 import { runMigrations } from '../src/db/migrate.js';
 import { PersistentEducationPlatformService } from '../src/services/persistent-education-platform-service.js';
+import { createAppHandler } from '../src/http/app.js';
 
 function createTempDbPath() {
   const dir = mkdtempSync(join(tmpdir(), 'eduplateforme-'));
@@ -134,6 +136,32 @@ test('persistance des entités fondamentales et audit', () => {
   assert.ok(persistedAuditEvents.some((event) => event.event_type === 'organization.created'));
   assert.ok(persistedAuditEvents.length >= 8);
 
+  service.close();
+  rmSync(temp.dir, { recursive: true, force: true });
+});
+
+test('POST /organizations persiste une organisation', async () => {
+  const temp = createTempDbPath();
+  const service = PersistentEducationPlatformService.bootstrap({ databasePath: temp.dbPath });
+  const server = createServer(createAppHandler(service, { maxBodyBytes: 2048 }));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  const address = server.address();
+  const url = `http://127.0.0.1:${address.port}/organizations`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Collège Soleil', code: 'COL-SOL' })
+  });
+
+  assert.equal(response.status, 201);
+  const payload = await response.json();
+  assert.equal(payload.organization.name, 'Collège Soleil');
+
+  const persisted = service.repositories.organizations.findById(payload.organization.id);
+  assert.equal(persisted?.code, 'COL-SOL');
+
+  await new Promise((resolve) => server.close(resolve));
   service.close();
   rmSync(temp.dir, { recursive: true, force: true });
 });
