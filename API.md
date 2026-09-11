@@ -1,11 +1,21 @@
 # API
 
 ## Authentication
+- `POST /auth/register`
 - `POST /auth/login`
+- `POST /auth/onboarding`
 - `POST /auth/refresh`
 - `DELETE /auth/logout`
 - `GET /auth/me`
 - `GET /auth/validate`
+
+`POST /auth/register` crée une personne et un compte sans organisation.
+`POST /auth/onboarding`, appelé avec le jeton d’accès obtenu, crée la première
+organisation, rattache le compte et attribue le rôle administrateur tenant.
+Les réponses d’authentification n’exposent jamais le jeton de renouvellement
+dans le JSON. Il est déposé uniquement dans un cookie `HttpOnly`,
+`SameSite=Strict` (`Secure` en production). `POST /auth/refresh` et
+`DELETE /auth/logout` utilisent ce cookie.
 
 ## Security model
 - Protected routes require an `Authorization` header with a bearer access token.

@@ -101,7 +101,42 @@ export const modules = [
 ];
 
 const moduleLookup = new Map([
-  ['/', modules[0]],
+  ['/', {
+    id: 'landing',
+    path: '/',
+    label: 'Accueil',
+    eyebrow: 'Gestion scolaire',
+    title: 'Accueil',
+    description: 'Créez et gérez votre établissement avec Eduplateforme.',
+    highlights: []
+  }],
+  ['/login', {
+    id: 'login',
+    path: '/login',
+    label: 'Connexion',
+    eyebrow: 'Accès sécurisé',
+    title: 'Connexion',
+    description: 'Connectez-vous à votre établissement.',
+    highlights: []
+  }],
+  ['/register', {
+    id: 'register',
+    path: '/register',
+    label: 'Créer un compte',
+    eyebrow: 'Démarrage',
+    title: 'Créer un compte',
+    description: 'Créez votre compte administrateur.',
+    highlights: []
+  }],
+  ['/onboarding', {
+    id: 'onboarding',
+    path: '/onboarding',
+    label: 'Créer une école',
+    eyebrow: 'Configuration',
+    title: 'Créer votre école',
+    description: 'Configurez votre premier établissement.',
+    highlights: []
+  }],
   ...modules.map((module) => [module.path, module]),
 ]);
 

@@ -119,6 +119,21 @@ const RESOURCE_ORGANIZATION_RESOLVER = {
   default: (record) => [record.organizationId ?? null]
 };
 
+const TENANT_ADMIN_PERMISSIONS = Object.freeze([
+  'organizations.read', 'organizations.write',
+  'people.read', 'people.write',
+  'accounts.read', 'accounts.write',
+  'academics.read', 'academics.write',
+  'reports.read', 'reports.write',
+  'communications.read', 'communications.write',
+  'discipline.read', 'discipline.write',
+  'calendar.read', 'calendar.write',
+  'subscriptions.read', 'subscriptions.write',
+  'documents.read', 'documents.write',
+  'credentials.read', 'credentials.write',
+  'audit.read'
+]);
+
 function normalizePaging({ limit = 25, offset = 0 } = {}) {
   return {
     limit: Math.max(1, Math.min(200, Number(limit) || 25)),
@@ -544,6 +559,170 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     );
   }
 
+  registerUser(input) {
+    const normalizedUsername = input.username.toLowerCase();
+    const normalizedEmail = input.email.toLowerCase();
+    const existingAccount = Array.from(this.accounts.values()).find((candidate) =>
+      candidate.username.toLowerCase() === normalizedUsername || candidate.email === normalizedEmail
+    );
+    if (existingAccount) {
+      throw new ValidationError('An account already uses this username or email address.');
+    }
+
+    return this.transactional(() => {
+      const actorId = 'self-registration';
+      const person = FoundationService.prototype.registerPerson.call(this, {
+        givenName: input.givenName,
+        familyName: input.familyName,
+        contacts: [{ type: 'email', value: input.email.toLowerCase(), isPrimary: true }]
+      }, actorId);
+      this.recordCreate('people', person, actorId, 'person.self-register');
+
+      const account = FoundationService.prototype.openUserAccount.call(this, {
+        personId: person.id,
+        username: input.username,
+        email: input.email,
+        organizationIds: []
+      }, actorId);
+      account.activate();
+      this.recordCreate('accounts', account, actorId, 'account.self-register');
+      this.setLocalPassword(account.id, input.password);
+      return { person, account };
+    });
+  }
+
+  onboardAccount(accountId, organizationInput) {
+    const account = this.accounts.get(accountId);
+    if (!account) {
+      throw new ValidationError(`Unknown account: ${accountId}`);
+    }
+
+    if (account.organizationIds.length > 0) {
+      throw new ValidationError('This account has already completed onboarding.');
+    }
+
+    return this.transactional(() => {
+      const person = this.people.get(account.personId);
+      const organization = FoundationService.prototype.createOrganization.call(
+        this,
+        organizationInput,
+        account.id
+      );
+      this.recordCreate('organizations', organization, account.id, 'organization.onboard');
+
+      const personBefore = cloneRecord(person);
+      person.primaryOrganizationId = organization.id;
+      person.organizationId = organization.id;
+      person.touch();
+      this.recordUpdate('people', personBefore, person, account.id, 'person.onboard');
+
+      const accountBefore = cloneRecord(account);
+      account.organizationIds = [organization.id];
+      account.organizationId = organization.id;
+      account.touch();
+      this.recordUpdate('accounts', accountBefore, account, account.id, 'account.onboard');
+      this.connection.run(
+        'UPDATE refresh_tokens SET revoked_at = ? WHERE account_id = ? AND revoked_at IS NULL',
+        [new Date().toISOString(), account.id]
+      );
+
+      for (const code of TENANT_ADMIN_PERMISSIONS) {
+        if (!this.findPermissionByCode(code)) {
+          const permission = FoundationService.prototype.createPermission.call(
+            this,
+            { code, description: `Tenant administrator permission: ${code}` },
+            account.id
+          );
+          this.recordCreate('permissions', permission, account.id, 'permission.bootstrap');
+        }
+      }
+
+      let role = Array.from(this.roles.values()).find((candidate) => candidate.code === 'tenant-admin');
+      if (!role) {
+        role = FoundationService.prototype.createRole.call(this, {
+          code: 'tenant-admin',
+          name: 'Administrateur de l’organisation',
+          permissions: [...TENANT_ADMIN_PERMISSIONS]
+        }, account.id);
+        this.recordCreate('roles', role, account.id, 'role.bootstrap');
+      } else {
+        const missingPermissions = TENANT_ADMIN_PERMISSIONS.filter((code) => !role.permissions.includes(code));
+        if (missingPermissions.length > 0) {
+          const roleBefore = cloneRecord(role);
+          role.permissions.push(...missingPermissions);
+          role.touch();
+          this.recordUpdate('roles', roleBefore, role, account.id, 'role.bootstrap-update');
+        }
+      }
+
+      const assignment = FoundationService.prototype.assignRole.call(this, {
+        personId: person.id,
+        roleId: role.id,
+        organizationId: organization.id
+      }, account.id);
+      this.recordCreate('roleAssignments', assignment, account.id, 'role-assignment.onboard');
+      return { organization, account, person };
+    });
+  }
+
+  createOrganizationForAccount(accountId, input) {
+    const account = this.accounts.get(accountId);
+    if (!account || account.organizationIds.length === 0) {
+      throw new ValidationError('An onboarded account is required to create another organization.');
+    }
+    const role = Array.from(this.roles.values()).find((candidate) => candidate.code === 'tenant-admin');
+    if (!role) {
+      throw new ValidationError('The tenant administrator role is not configured.');
+    }
+
+    return this.transactional(() => {
+      const organization = FoundationService.prototype.createOrganization.call(this, input, account.id);
+      this.recordCreate('organizations', organization, account.id, 'organization.create');
+
+      const accountBefore = cloneRecord(account);
+      account.organizationIds.push(organization.id);
+      account.touch();
+      this.recordUpdate('accounts', accountBefore, account, account.id, 'account.organization-add');
+
+      const assignment = FoundationService.prototype.assignRole.call(this, {
+        personId: account.personId,
+        roleId: role.id,
+        organizationId: organization.id
+      }, account.id);
+      this.recordCreate('roleAssignments', assignment, account.id, 'role-assignment.organization-add');
+      return organization;
+    });
+  }
+
+  async createAuthenticationSession(account, organizationId = null) {
+    const permissions = this.getAccountPermissions(account.id, organizationId);
+    const refreshToken = createRefreshToken();
+    const tokenId = randomUUID();
+    const now = new Date();
+    const refreshExpiresAt = new Date(now.getTime() + (1000 * 60 * 60 * 24 * 30)).toISOString();
+    await this.connection.run(
+      `INSERT INTO refresh_tokens(token_id, account_id, organization_id, refresh_token_hash, expires_at, revoked_at, created_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+      [tokenId, account.id, organizationId, hashToken(refreshToken), refreshExpiresAt, now.toISOString()]
+    );
+
+    const accessToken = signJwt({
+      sub: account.id,
+      personId: account.personId,
+      organizationId,
+      organizationIds: account.organizationIds,
+      permissions,
+      username: account.username
+    }, { expiresInSeconds: 60 * 60 * 24 });
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: 60 * 60 * 24,
+      user: this.getAuthenticatedUserByAccountId(account.id, organizationId)
+    };
+  }
+
   async authenticate({ username, password, organizationId = null }) {
     const account = Array.from(this.accounts.values()).find((candidate) =>
       candidate.username.toLowerCase() === String(username).toLowerCase()
@@ -573,26 +752,6 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       throw new ValidationError('Account is not allowed to access this organization.');
     }
 
-    const permissions = this.getAccountPermissions(account.id, resolvedOrganizationId);
-    const refreshToken = createRefreshToken();
-    const tokenId = randomUUID();
-    const now = new Date();
-    const refreshExpiresAt = new Date(now.getTime() + (1000 * 60 * 60 * 24 * 30)).toISOString();
-    await this.connection.run(
-      `INSERT INTO refresh_tokens(token_id, account_id, organization_id, refresh_token_hash, expires_at, revoked_at, created_at)
-       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
-      [tokenId, account.id, resolvedOrganizationId, hashToken(refreshToken), refreshExpiresAt, now.toISOString()]
-    );
-
-    const accessToken = signJwt({
-      sub: account.id,
-      personId: account.personId,
-      organizationId: resolvedOrganizationId,
-      organizationIds: account.organizationIds,
-      permissions,
-      username: account.username
-    }, { expiresInSeconds: 60 * 60 * 24 });
-
     await this.writeAuditEntry({
       actorId: account.id,
       organizationId: resolvedOrganizationId,
@@ -602,12 +761,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       after: { organizationId: resolvedOrganizationId }
     });
 
-    return {
-      accessToken,
-      refreshToken,
-      expiresIn: 60 * 60 * 24,
-      user: this.getAuthenticatedUserByAccountId(account.id, resolvedOrganizationId)
-    };
+    return this.createAuthenticationSession(account, resolvedOrganizationId);
   }
 
   async refreshAuthentication(refreshToken) {
@@ -821,11 +975,25 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     if (!collectionKey || !collection?.has(id)) {
       throw new ValidationError(`Unknown ${resource}: ${id}`);
     }
+    if (resource === 'accounts' && (
+      Object.prototype.hasOwnProperty.call(patch, 'organizationId')
+      || Object.prototype.hasOwnProperty.call(patch, 'organizationIds')
+    )) {
+      throw new ValidationError('Account organization memberships cannot be changed through generic updates.');
+    }
 
     return this.transactional(() => {
       const entity = collection.get(id);
       const before = cloneRecord(entity);
-      const immutableFields = new Set(['id', 'organizationId', 'personId', 'learnerId', 'threadId', 'authorPersonId']);
+      const immutableFields = new Set([
+        'id',
+        'organizationId',
+        'organizationIds',
+        'personId',
+        'learnerId',
+        'threadId',
+        'authorPersonId'
+      ]);
       for (const [key, value] of Object.entries(patch)) {
         if (!immutableFields.has(key) && key !== 'createdAt') {
           entity[key] = value;

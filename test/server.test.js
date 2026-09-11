@@ -4,7 +4,10 @@ import test from 'node:test';
 import { createServer } from '../src/server.js';
 
 const applicationRoutes = [
-  ['/', 'Dashboard'],
+  ['/', 'Accueil'],
+  ['/login', 'Connexion'],
+  ['/register', 'Créer un compte'],
+  ['/onboarding', 'Créer votre école'],
   ['/dashboard', 'Dashboard'],
   ['/organizations', 'Organizations'],
   ['/people', 'People & Identity'],
@@ -47,10 +50,9 @@ test('serves each shell route with responsive foundation content', async () => {
 
       assert.equal(response.status, 200);
       assert.match(response.headers.get('content-type') ?? '', /text\/html/);
-      assert.match(html, new RegExp(`<title>Eduplateforme · ${title}</title>`));
-      assert.match(html, /Responsive shell/);
-      assert.match(html, /People &amp; Identity|People & Identity/);
-      assert.match(html, /Documents &amp; Credentials|Documents & Credentials/);
+      assert.match(html, new RegExp(`<title>Eduplateforme · ${title.replaceAll('&', '&amp;')}</title>`));
+      assert.match(html, /id="app"/);
+      assert.match(html, /Chargement de votre espace/);
     }
   });
 });
@@ -59,8 +61,8 @@ test('serves the static shell assets', async () => {
   await withServer(async (baseUrl) => {
     const assetChecks = [
       ['/styles.css', /text\/css/, /--primary/],
-      ['/app.js', /text\/javascript/, /setNavigationState/],
-      ['/manifest.webmanifest', /application\/manifest\+json/, /"start_url": "\/dashboard"/],
+      ['/app.js', /text\/javascript/, /onboarding/],
+      ['/manifest.webmanifest', /application\/manifest\+json/, /"start_url": "\/"/],
     ];
 
     for (const [route, contentType, snippet] of assetChecks) {

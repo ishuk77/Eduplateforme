@@ -23,21 +23,47 @@ The repository now includes both:
    - i18n and localization profile
    - platform subscriptions
    - parental consent and expanded audit history
-3. the responsive web/mobile shell assets connected to live backend metadata/auth endpoints
+3. l’application web/mobile fonctionnelle connectée aux API réelles :
+   - landing publique, inscription, connexion et déconnexion
+   - création guidée de la première école avec rôle administrateur
+   - tableau de bord alimenté par les API
+   - listes et formulaires pour tous les modules de navigation
+
+## Créer le premier compte et tester
+
+1. Démarrez l’application avec Node.js 22.13 ou supérieur : `npm ci`, puis
+   `npm start`.
+2. Ouvrez `http://localhost:3000`.
+3. Choisissez **Créer un compte**, renseignez le profil et un mot de passe
+   d’au moins 10 caractères.
+4. Créez la première école. Le compte reçoit automatiquement le rôle
+   **Administrateur de l’organisation** pour cette école uniquement.
+5. Le tableau de bord s’ouvre. Pour tester un parcours complet, créez une
+   personne, puis une année scolaire, un programme, une classe, un apprenant
+   et une inscription.
+
+Le jeton d’accès reste limité à l’onglet (`sessionStorage`). Le jeton de
+renouvellement est conservé dans un cookie `HttpOnly`, `SameSite=Strict` et
+`Secure` en production. Les erreurs de validation ou de permission sont
+affichées par l’interface; aucune donnée ni réussite n’est simulée.
 
 ## Consolidated security baseline
 
-- JWT access + refresh token flow: `POST /auth/login`, `POST /auth/refresh`, `DELETE /auth/logout`, `GET /auth/me`
+- JWT access + refresh token flow: `POST /auth/register`, `POST /auth/login`, `POST /auth/onboarding`, `POST /auth/refresh`, `DELETE /auth/logout`, `GET /auth/me`
 - Role/permission checks on protected routes (for example `organizations.*`, `people.*`, `accounts.*`, `academics.*`, `documents.*`, `credentials.*`, `audit.read`)
 - Multi-tenant organization isolation enforced through token organization scope
 - Input validation (JSON parsing, blocked suspicious payload patterns, zod schemas on auth/account creation)
 - Consistent API error payloads with explicit status codes
 
-### Still to harden in future iterations
+### Limites connues
 
 - Rotate and externalize production secrets (`JWT_SECRET`, `DATA_ENCRYPTION_KEY`)
 - Add brute-force protection per account on authentication endpoints
 - Expand fine-grained field-level authorization and audit review workflows
+- Les documents stockent une référence vers un stockage externe; aucun upload
+  binaire n’est inclus dans ce MVP.
+- Les notifications, finances, devoirs, notes et présences restent disponibles
+  par API mais ne font pas partie des modules de navigation demandés ici.
 
 ## Project structure
 
