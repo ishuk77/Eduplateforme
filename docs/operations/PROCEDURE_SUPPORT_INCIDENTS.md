@@ -20,7 +20,7 @@
 1. réception et enregistrement ;
 2. qualification de sévérité, impact et urgence ;
 3. affectation au bon niveau de support ;
-4. diagnostic et containment ;
+4. diagnostic et endiguement ;
 5. résolution ou escalade ;
 6. validation utilisateur ou exploitation ;
 7. clôture documentée.
