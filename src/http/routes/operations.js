@@ -78,6 +78,33 @@ export function registerOperationsRoutes(router, { service }) {
           actions: ['Dry-run', 'Application transactionnelle', 'Export unique des identifiants']
         },
         {
+          id: 'profiles',
+          title: 'Profil personnel et confidentialité',
+          audience: ['all authenticated roles'],
+          permissions: ['self-service', 'people.read', 'people.write'],
+          prerequisites: ['Compte rattaché à une personne'],
+          workflow: ['Modifier ses préférences et contacts', 'Consentir avant les données d’urgence', 'Ajouter une photo sûre', 'Faire corriger les champs officiels par un administrateur'],
+          actions: ['Self-service limité', 'Administration des champs officiels', 'Consultation des rôles sans auto-escalade']
+        },
+        {
+          id: 'documents',
+          title: 'Logo, signatures et documents de preuve',
+          audience: ['admin', 'records officer', 'learner'],
+          permissions: ['organizations.write', 'credentials.write', 'documents.write', 'documents.verify'],
+          prerequisites: ['Personne existante', 'Connexion en ligne', 'Fichier conforme'],
+          workflow: ['Configurer le logo', 'Habiliter les signataires', 'Téléverser PDF/PNG/JPEG', 'Vérifier ou rejeter avec motif', 'Télécharger via contrôle d’accès'],
+          actions: ['Remplacer/révoquer', 'Vérifier le SHA-256', 'Consulter l’audit']
+        },
+        {
+          id: 'lms',
+          title: 'Cours, chapitres, leçons, quiz et titres',
+          audience: ['teacher', 'trainer', 'learner', 'student', 'admin'],
+          permissions: ['lms.read', 'lms.write', 'credentials.write'],
+          prerequisites: ['Programme et cours académiques', 'Participant et inscription LMS'],
+          workflow: ['Ordonner chapitres et leçons', 'Configurer quiz/seuil/tentatives', 'Valider les prérequis côté serveur', 'Passer l’examen final', 'Délivrer un titre si éligible'],
+          actions: ['Créer le contenu', 'Soumettre une tentative', 'Valider une leçon', 'Délivrer/révoquer un titre']
+        },
+        {
           id: 'governance',
           title: 'Gouvernance et exploitation',
           audience: ['platform-admin', 'admin', 'support'],
@@ -92,6 +119,9 @@ export function registerOperationsRoutes(router, { service }) {
         { question: 'Comment escalader un ticket ?', answer: 'Affectez le niveau L1, L2, L3 ou L4 et ajoutez un commentaire traçable.' },
         { question: 'Pourquoi une liste est-elle indisponible ?', answer: 'Le prérequis doit être créé et vous devez disposer du droit de lecture correspondant. L’interface affiche un lien vers le module concerné.' },
         { question: 'Les cinq langues sont-elles intégralement traduites ?', answer: 'La navigation générale et les états sont localisés. Certains libellés métier utilisent encore le français de référence comme fallback non vide.' }
+        ,
+        { question: 'Les signatures et diplômes ont-ils une valeur juridique garantie ?', answer: 'Non. Une signature est une marque visuelle auditée. Un titre est émis par la plateforme et ne doit être présenté comme officiel ou accrédité que si une autorité valide est configurée et vérifiée.' },
+        { question: 'Où sont stockés les fichiers ?', answer: 'Les logos, signatures, avatars et preuves sont stockés de façon bornée dans la base configurée; aucun fichier ne dépend du disque éphémère de Render.' }
       ],
       localeCoverage: {
         supported: ['fr', 'en', 'es', 'pt', 'ar'],

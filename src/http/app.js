@@ -72,7 +72,9 @@ function withSecurityHeaders(response, corsOrigin) {
   if (corsOrigin) {
     connectSources.push(corsOrigin);
   }
-  headers.set('content-security-policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ${connectSources.join(' ')}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`);
+  if (!headers.has('content-security-policy')) {
+    headers.set('content-security-policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src ${connectSources.join(' ')}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`);
+  }
   return new Response(response.body, { status: response.status, headers });
 }
 
@@ -159,6 +161,17 @@ function createOpenApiDescription() {
       '/lms/programs': { get: { summary: 'List LMS programs' }, post: { summary: 'Create LMS program linked to academics' } },
       '/lms/courses': { get: { summary: 'List LMS courses' }, post: { summary: 'Create LMS course linked to an academic course' } },
       '/lms/quizzes/{id}/attempts': { post: { summary: 'Submit and score a quiz attempt' } },
+      '/lms/enrollments/{id}/lessons/{lessonId}/complete': { post: { summary: 'Complete an unlocked lesson after server-side prerequisite checks' } },
+      '/lms/enrollments/{id}/progress-detail': { get: { summary: 'Return server-computed lesson locks and title eligibility' } },
+      '/lms/enrollments/{id}/titles': { post: { summary: 'Issue an eligible platform title with an immutable signatory snapshot' } },
+      '/profile/me': { get: { summary: 'Get the current private profile' }, put: { summary: 'Update self-service profile fields' } },
+      '/profile/me/avatar': { post: { summary: 'Upload a validated PNG or JPEG avatar' } },
+      '/organizations/{id}/branding/logo': { post: { summary: 'Upload or replace the tenant logo' }, delete: { summary: 'Remove the tenant logo' } },
+      '/signatures': { get: { summary: 'List managed signatories' }, post: { summary: 'Create an auditable visual signature' } },
+      '/documents/evidence': { post: { summary: 'Upload bounded proof content to tenant database storage' } },
+      '/documents/{id}/content': { get: { summary: 'Download authorized proof content' } },
+      '/documents/{id}/verification': { post: { summary: 'Verify, reject, or expire uploaded evidence' } },
+      '/credentials/{id}/print': { get: { summary: 'Render an authenticated printable platform title' } },
       '/meetings': { get: { summary: 'List external meetings' }, post: { summary: 'Prepare an external meeting reference' } },
       '/meetings/{id}/attendance/import': { post: { summary: 'Import attendance through a configured adapter' } },
       '/data-quality/runs/execute': { post: { summary: 'Execute tenant and country data quality rules' } },

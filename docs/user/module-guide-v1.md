@@ -30,3 +30,31 @@ L’application réutilise une personne du tenant par courriel, un apprenant par
 ## Gouvernance et exploitation
 
 Audit, qualité des données, EMIS, sécurité, abonnements, support et exploitation sont réservés aux permissions correspondantes. Les opérations externes restent explicitement signalées comme telles. Les actions officielles, dont les imports, ne sont jamais placées dans la file hors ligne.
+
+## Identité visuelle et signatures
+
+- Le logo institutionnel est configuré par tenant dans **Identité & preuves**. Seuls PNG et JPEG cohérents avec leur contenu sont acceptés, jusqu’à 1 Mio et 4096×4096 pixels. Le remplacement et la suppression sont audités; les SVG actifs sont refusés.
+- Une signature associe une image PNG/JPEG, une personne, une fonction et un objectif. Seuls les utilisateurs disposant de `credentials.write` peuvent l’activer ou la révoquer.
+- La plateforme conserve l’identifiant et le SHA-256 de la signature utilisée dans l’instantané du titre. Il s’agit d’une marque visuelle traçable, **pas d’une signature électronique qualifiée**.
+
+## Documents de preuve
+
+**Rôles :** gestionnaire documentaire (`documents.write`) pour importer, vérificateur distinct (`documents.verify`) pour décider, titulaire ou lecteur autorisé (`documents.read`) pour télécharger. Le titulaire d’un simple droit d’import ne peut donc pas auto-valider sa preuve.
+
+**Formats et limites :** PDF, PNG ou JPEG, 8 Mio maximum par fichier. Le MIME déclaré doit correspondre aux octets. Les PDF avec JavaScript, lancement automatique ou pièce jointe incorporée sont refusés. Le nom est normalisé, le SHA-256 est calculé, et les octets sont stockés dans SQLite ou PostgreSQL — jamais sur le disque éphémère de Render.
+
+**Workflow :** sélectionner la personne et le type (reçu, bulletin, certificat, attestation, diplôme ou type extensible), téléverser, contrôler l’état `pending`, puis valider, rejeter avec motif ou marquer expiré. Les liens facultatifs vers inscription, paiement, résultat ou délivrance sont validés dans le même tenant. Le téléchargement est authentifié et vérifie le tenant avant de lire le blob.
+
+## Profils personnels
+
+Chaque compte accède à **Mon profil** pour gérer nom usuel, langue, pays, fuseau, contacts, adresse, bio, accessibilité, notifications et photo PNG/JPEG (2 Mio maximum). Un consentement explicite est requis avant de stocker un contact d’urgence. Le titulaire voit ses données privées; les réponses destinées à d’autres personnes masquent les contacts secondaires et les informations d’urgence.
+
+Les prénom/nom officiels, date de naissance, identifiants, rôles et affectations ne sont pas auto-modifiables. `people.write` est requis pour les champs officiels; les rôles et affectations restent en lecture seule dans l’écran de profil afin d’empêcher toute auto-escalade.
+
+## Parcours LMS et titres
+
+Le modèle suit **cours → chapitres (modules techniques existants) → leçons → quiz**. Les positions sont positives et uniques dans leur parent. Une leçon requise non terminée verrouille les suivantes; un prérequis explicite peut renforcer cet ordre. Un quiz de leçon doit atteindre son seuil avant validation et respecte une limite de 1 à 20 tentatives. L’examen final reste verrouillé jusqu’à la fin de toutes les leçons requises.
+
+Le serveur calcule les verrous et crée la progression; l’interface seule ne peut pas contourner ces règles. Les opérations administratives historiques sur la progression restent disponibles aux détenteurs de `lms.write` et sont auditées.
+
+Un certificat, une attestation ou un diplôme ne peut être délivré via le parcours qu’après validation de toutes les exigences et de l’examen final configuré. Le titre reçoit un numéro unique, un document immuable, un instantané des signataires, une référence publique opaque et un statut révocable. Sans autorisation/accréditation active configurée, la mention reste **« émis par la plateforme, accréditation non vérifiée »**; elle ne constitue pas une reconnaissance officielle.

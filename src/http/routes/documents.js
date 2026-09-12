@@ -1,6 +1,18 @@
 import { parseJson, parsePagination } from '../middleware/validation.js';
-import { authorizeRequest, requireIdentity } from '../middleware/auth.js';
+import { authorizeRequest, enforceRateLimit, requireIdentity } from '../middleware/auth.js';
 import { makeCrudHandlers } from './_helpers.js';
+import { ASSET_LIMITS } from '../../services/secure-assets-service.js';
+import { binaryResponse, parseAssetRequest } from './_uploads.js';
+import { ApiError } from '../../shared/errors.js';
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
 
 function registerCrud(router, { service, path, resource, create, readPermission, writePermission, mutable = true }) {
   const handlers = makeCrudHandlers({
@@ -28,6 +40,134 @@ function accessContext(request) {
 }
 
 export function registerDocumentRoutes(router, { service }) {
+  router.add('GET', '/public/organizations/:id/logo', async (_request, _url, params) => {
+    const branding = service.getTenantLogo(params.id);
+    if (!branding) return Response.json({ error: { code: 'NOT_FOUND', message: 'Logo not found.' } }, { status: 404 });
+    return binaryResponse(await service.getTenantLogoContent(params.id), { fileName: branding.fileName });
+  });
+
+  router.add('GET', '/organizations/:id/branding', async (request, _url, params) => {
+    authorizeRequest(request, service, { organizationId: params.id, permissions: ['organizations.read'] });
+    return Response.json(service.getTenantLogo(params.id));
+  });
+
+  router.add('POST', '/organizations/:id/branding/logo', async (request, _url, params) => {
+    enforceRateLimit(request, { namespace: 'logo-upload', limit: 20 });
+    const identity = authorizeRequest(request, service, {
+      organizationId: params.id,
+      permissions: ['organizations.write']
+    });
+    const body = await parseAssetRequest(request, ASSET_LIMITS.logo);
+    return Response.json(await service.saveTenantLogo({ ...body, organizationId: params.id }, identity.actorId), { status: 201 });
+  });
+
+  router.add('DELETE', '/organizations/:id/branding/logo', async (request, _url, params) => {
+    const identity = authorizeRequest(request, service, {
+      organizationId: params.id,
+      permissions: ['organizations.write']
+    });
+    return Response.json({ removed: await service.removeTenantLogo(params.id, identity.actorId) });
+  });
+
+  router.add('GET', '/signatures', async (request, url) => {
+    const identity = requireIdentity(request, service);
+    const organizationId = url.searchParams.get('organizationId') ?? identity.organizationId;
+    authorizeRequest(request, service, { organizationId, permissions: ['credentials.read'] });
+    return Response.json({ items: service.listManagedSignatures(organizationId, url.searchParams.get('personId')) });
+  });
+
+  router.add('POST', '/signatures', async (request) => {
+    enforceRateLimit(request, { namespace: 'signature-upload', limit: 30 });
+    requireIdentity(request, service);
+    const body = await parseAssetRequest(request, ASSET_LIMITS.signature);
+    const identity = authorizeRequest(request, service, {
+      organizationId: body.organizationId,
+      permissions: ['credentials.write']
+    });
+    return Response.json(await service.createManagedSignature(body, identity.actorId), { status: 201 });
+  });
+
+  router.add('GET', '/signatures/:id/content', async (request, _url, params) => {
+    const signature = await service.getCrudResource('managedSignatures', params.id);
+    authorizeRequest(request, service, { organizationId: signature.organizationId, permissions: ['credentials.read'] });
+    return binaryResponse(await service.getManagedSignatureContent(params.id, signature.organizationId), {
+      fileName: signature.fileName
+    });
+  });
+
+  router.add('POST', '/signatures/:id/revoke', async (request, _url, params) => {
+    const signature = await service.getCrudResource('managedSignatures', params.id);
+    const identity = authorizeRequest(request, service, {
+      organizationId: signature.organizationId,
+      permissions: ['credentials.write']
+    });
+    return Response.json(await service.revokeManagedSignature(params.id, signature.organizationId, await parseJson(request), identity.actorId));
+  });
+
+  router.add('POST', '/documents/evidence', async (request) => {
+    enforceRateLimit(request, { namespace: 'evidence-upload', limit: 40 });
+    requireIdentity(request, service);
+    const body = await parseAssetRequest(request, ASSET_LIMITS.evidence);
+    const identity = authorizeRequest(request, service, {
+      organizationId: body.organizationId,
+      permissions: ['documents.write']
+    });
+    return Response.json(await service.uploadEvidenceDocument(body, identity.actorId), { status: 201 });
+  });
+
+  router.add('GET', '/documents/:id/content', async (request, _url, params) => {
+    const document = await service.getCrudResource('documents', params.id);
+    const identity = authorizeRequest(request, service, {
+      organizationId: document.organizationId,
+      permissions: ['documents.read']
+    });
+    const accountPersonId = service.accounts.get(identity.accountId)?.personId;
+    if (document.accessLevel === 'holder' && accountPersonId !== document.personId
+      && !identity.permissions.includes('*') && !identity.permissions.includes('documents.write')) {
+      throw new ApiError('FORBIDDEN', 'Holder documents are only available to their holder or an authorized records officer.', 403);
+    }
+    return binaryResponse(await service.getEvidenceContent(params.id, document.organizationId), {
+      disposition: 'attachment',
+      fileName: document.metadata.fileName
+    });
+  });
+
+  router.add('GET', '/credentials/:id/print', async (request, _url, params) => {
+    const credential = await service.getCrudResource('credentials', params.id);
+    const identity = authorizeRequest(request, service, {
+      organizationId: credential.organizationId,
+      permissions: ['credentials.read']
+    });
+    const accountPersonId = service.accounts.get(identity.accountId)?.personId;
+    if (accountPersonId !== credential.personId
+      && !identity.permissions.includes('*') && !identity.permissions.includes('credentials.write')) {
+      throw new ApiError('FORBIDDEN', 'This title is only available to its holder or an authorized issuer.', 403);
+    }
+    const document = await service.getCrudResource('documents', credential.documentId);
+    const snapshot = document.metadata?.generatedSnapshot ?? {};
+    return new Response(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(credential.credentialNumber)}</title><link rel="stylesheet" href="${new URL('/styles.css', request.url)}"></head><body class="print-title"><p>Eduplateforme</p><h1>${escapeHtml(credential.qualification)}</h1><p>attribué à</p><h2>${escapeHtml(snapshot.holder?.name)}</h2><dl><div><dt>Programme</dt><dd>${escapeHtml(snapshot.program?.title)}</dd></div><div><dt>Numéro</dt><dd>${escapeHtml(credential.credentialNumber)}</dd></div><div><dt>Date</dt><dd>${escapeHtml(credential.awardedAt)}</dd></div><div><dt>Statut</dt><dd>${escapeHtml(credential.status)}</dd></div></dl><section>${credential.signatories.map((signatory) => `<p><strong>${escapeHtml(signatory.name)}</strong><br>${escapeHtml(signatory.function)}<br><small>${escapeHtml(signatory.evidenceReference)}</small></p>`).join('')}</section><small>${escapeHtml(snapshot.assurance)} · Vérification publique: ${escapeHtml(credential.publicReference)}</small></body></html>`, {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'content-security-policy': "default-src 'none'; style-src 'self'",
+        'cache-control': 'private, no-store'
+      }
+    });
+  });
+
+  router.add('POST', '/documents/:id/verification', async (request, _url, params) => {
+    const document = await service.getCrudResource('documents', params.id);
+    const identity = authorizeRequest(request, service, {
+      organizationId: document.organizationId,
+      permissions: ['documents.verify']
+    });
+    return Response.json(await service.verifyEvidenceDocument(
+      params.id,
+      document.organizationId,
+      await parseJson(request),
+      identity.actorId
+    ));
+  });
+
   registerCrud(router, {
     service,
     path: '/document-templates',

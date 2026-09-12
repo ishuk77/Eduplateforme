@@ -72,7 +72,17 @@ function registerCrud(router, service, [path, resource, permission]) {
     router.add('PUT', `${path}/:id`, handlers.update);
     router.add('DELETE', `${path}/:id`, handlers.remove);
   }
+
   router.add('GET', `${path}/:id/history`, handlers.history);
+}
+
+function assertEnrollmentAccess(service, identity, enrollment) {
+  if (identity.permissions.includes('*') || identity.permissions.includes('lms.write')) return;
+  const participant = service.lmsParticipants.get(enrollment.participantId);
+  const accountPersonId = service.accounts.get(identity.accountId)?.personId;
+  if (!participant || participant.personId !== accountPersonId) {
+    throw new ApiError('FORBIDDEN', 'Learners can only access their own LMS enrollment.', 403);
+  }
 }
 
 export function registerLearningSystemRoutes(router, { service }) {
@@ -83,8 +93,11 @@ export function registerLearningSystemRoutes(router, { service }) {
     const quiz = await service.getCrudResource('lmsQuizzes', params.id);
     const identity = authorizeRequest(request, service, {
       organizationId: quiz.organizationId,
-      permissions: ['lms.write']
+      permissions: ['lms.read']
     });
+    const enrollment = await service.getCrudResource('lmsEnrollments', body.enrollmentId);
+    if (enrollment.organizationId !== quiz.organizationId) throw new ApiError('FORBIDDEN', 'Cross-organization attempt is forbidden.', 403);
+    assertEnrollmentAccess(service, identity, enrollment);
 
     return Response.json(await service.submitLmsQuizAttempt({
       ...body,
@@ -95,11 +108,56 @@ export function registerLearningSystemRoutes(router, { service }) {
 
   router.add('GET', '/lms/enrollments/:id/progress-summary', async (request, _url, params) => {
     const enrollment = await service.getCrudResource('lmsEnrollments', params.id);
-    authorizeRequest(request, service, {
+    const identity = authorizeRequest(request, service, {
       organizationId: enrollment.organizationId,
       permissions: ['lms.read']
     });
+    assertEnrollmentAccess(service, identity, enrollment);
+    const progress = service.getLmsEnrollmentProgress(params.id, enrollment.organizationId);
+    return Response.json({
+      enrollmentId: progress.enrollmentId,
+      completedLessons: progress.completedLessons,
+      totalLessons: progress.totalLessons,
+      percent: progress.percent,
+      completed: progress.completed
+    });
+  });
+
+  router.add('GET', '/lms/enrollments/:id/progress-detail', async (request, _url, params) => {
+    const enrollment = await service.getCrudResource('lmsEnrollments', params.id);
+    const identity = authorizeRequest(request, service, {
+      organizationId: enrollment.organizationId,
+      permissions: ['lms.read']
+    });
+    assertEnrollmentAccess(service, identity, enrollment);
     return Response.json(service.getLmsEnrollmentProgress(params.id, enrollment.organizationId));
+  });
+
+  router.add('POST', '/lms/enrollments/:id/lessons/:lessonId/complete', async (request, _url, params) => {
+    const enrollment = await service.getCrudResource('lmsEnrollments', params.id);
+    const identity = authorizeRequest(request, service, {
+      organizationId: enrollment.organizationId,
+      permissions: ['lms.read']
+    });
+    assertEnrollmentAccess(service, identity, enrollment);
+    return Response.json(await service.completeLmsLesson({
+      organizationId: enrollment.organizationId,
+      enrollmentId: enrollment.id,
+      lessonId: params.lessonId
+    }, identity.actorId), { status: 201 });
+  });
+
+  router.add('POST', '/lms/enrollments/:id/titles', async (request, _url, params) => {
+    const enrollment = await service.getCrudResource('lmsEnrollments', params.id);
+    const identity = authorizeRequest(request, service, {
+      organizationId: enrollment.organizationId,
+      permissions: ['lms.write', 'credentials.write']
+    });
+    return Response.json(await service.issueLmsTitle({
+      ...(await parseJson(request)),
+      organizationId: enrollment.organizationId,
+      enrollmentId: enrollment.id
+    }, identity.actorId), { status: 201 });
   });
 
   router.add('POST', '/meetings/:id/join', async (request, _url, params) => {

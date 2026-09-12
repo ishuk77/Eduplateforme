@@ -202,6 +202,8 @@ export class EducationPlatformService extends FoundationService {
     this.importBatches = new Map();
     this.documentTemplates = new Map();
     this.documentShares = new Map();
+    this.tenantBranding = new Map();
+    this.managedSignatures = new Map();
     this.consents = new Map();
     this.collaborationRequests = new Map();
     this.transfers = new Map();
@@ -241,11 +243,26 @@ export class EducationPlatformService extends FoundationService {
       if (['lmsModules', 'lmsLessons'].includes(resource) && (!Number.isInteger(Number(input.position)) || Number(input.position) < 1)) {
         throw new ValidationError('position must be a positive integer.');
       }
+      if (resource === 'lmsModules' && Array.from(this.lmsModules.values()).some((item) =>
+        item.organizationId === input.organizationId && item.courseId === input.courseId
+        && Number(item.position) === Number(input.position) && item.status !== 'archived'
+      )) {
+        throw new ValidationError('Module position must be unique within the course.');
+      }
+      if (resource === 'lmsLessons' && Array.from(this.lmsLessons.values()).some((item) =>
+        item.organizationId === input.organizationId && item.moduleId === input.moduleId
+        && Number(item.position) === Number(input.position) && item.status !== 'archived'
+      )) {
+        throw new ValidationError('Lesson position must be unique within the module.');
+      }
       if (resource === 'lmsProgress' && (!Number.isFinite(Number(input.percent)) || Number(input.percent) < 0 || Number(input.percent) > 100)) {
         throw new ValidationError('percent must be between 0 and 100.');
       }
       if (resource === 'lmsQuizzes' && (!Number.isFinite(Number(input.passingScore)) || Number(input.passingScore) < 0 || Number(input.passingScore) > 100)) {
         throw new ValidationError('passingScore must be between 0 and 100.');
+      }
+      if (resource === 'lmsQuizzes' && (!Number.isInteger(Number(input.maxAttempts ?? 3)) || Number(input.maxAttempts ?? 3) < 1 || Number(input.maxAttempts ?? 3) > 20)) {
+        throw new ValidationError('maxAttempts must be an integer between 1 and 20.');
       }
       if (resource === 'meetings') {
         try {
@@ -269,6 +286,23 @@ export class EducationPlatformService extends FoundationService {
     if (resource === 'lmsProgress') {
       record.percent = Number(input.percent);
       record.completedAt = record.percent === 100 ? (input.completedAt ?? new Date().toISOString()) : null;
+    }
+    if (resource === 'lmsModules' || resource === 'lmsLessons') {
+      record.position = Number(input.position);
+      record.required = input.required !== false;
+    }
+    if (resource === 'lmsQuizzes') {
+      record.passingScore = Number(input.passingScore);
+      record.maxAttempts = Number(input.maxAttempts ?? 3);
+      record.examType = input.examType ?? (input.lessonId ? 'lesson' : 'practice');
+      if (!['practice', 'lesson', 'final'].includes(record.examType)) {
+        throw new ValidationError('examType must be practice, lesson, or final.');
+      }
+      record.required = input.required !== false;
+      record.attemptState = input.attemptState ?? 'open';
+      if (!['open', 'closed'].includes(record.attemptState)) {
+        throw new ValidationError('attemptState must be open or closed.');
+      }
     }
     if (resource === 'lmsEnrollments') record.enrollmentStatus = input.enrollmentStatus ?? 'active';
     if (resource === 'meetings') record.externalState = input.externalState ?? 'prepared';
@@ -310,7 +344,7 @@ export class EducationPlatformService extends FoundationService {
       lmsParticipants: [['people', input.personId, 'person']],
       lmsEnrollments: [['lmsParticipants', input.participantId, 'participant'], ['lmsPrograms', input.programId, 'LMS program']],
       lmsProgress: [['lmsEnrollments', input.enrollmentId, 'LMS enrollment'], ['lmsLessons', input.lessonId, 'lesson']],
-      lmsQuizzes: [['lmsCourses', input.courseId, 'LMS course']],
+      lmsQuizzes: [['lmsCourses', input.courseId, 'LMS course'], ...(input.lessonId ? [['lmsLessons', input.lessonId, 'lesson']] : [])],
       lmsQuestions: [['lmsQuizzes', input.quizId, 'quiz']],
       lmsAssessments: [['lmsCourses', input.courseId, 'LMS course']],
       lmsPayments: [['lmsEnrollments', input.enrollmentId, 'LMS enrollment'], ['invoices', input.invoiceId, 'invoice']],
@@ -339,6 +373,19 @@ export class EducationPlatformService extends FoundationService {
       if (course?.programId !== enrollment.programId) {
         throw new ValidationError('Lesson must belong to the enrollment LMS program.');
       }
+      if (resource === 'lmsLessons' && input.prerequisiteLessonId) {
+        const prerequisite = this.assertTenantRecord(this.lmsLessons, input.prerequisiteLessonId, input.organizationId, 'prerequisite lesson');
+        const module = this.lmsModules.get(input.moduleId);
+        const prerequisiteModule = this.lmsModules.get(prerequisite.moduleId);
+        if (prerequisiteModule?.courseId !== module?.courseId || prerequisite.id === input.id) {
+          throw new ValidationError('A prerequisite lesson must be another lesson in the same course.');
+        }
+      }
+      if (resource === 'lmsQuizzes' && input.lessonId) {
+        const lesson = this.lmsLessons.get(input.lessonId);
+        const module = this.lmsModules.get(lesson?.moduleId);
+        if (module?.courseId !== input.courseId) throw new ValidationError('Quiz lesson must belong to the quiz course.');
+      }
     }
     if (resource === 'lmsAssessments' && input.gradingSystemId) {
       this.assertTenantRecord(this.gradingSystems, input.gradingSystemId, input.organizationId, 'grading system');
@@ -362,10 +409,25 @@ export class EducationPlatformService extends FoundationService {
 
   async submitLmsQuizAttempt(input, actorId = null) {
     const enrollment = this.assertTenantRecord(this.lmsEnrollments, input.enrollmentId, input.organizationId, 'LMS enrollment');
+    if (enrollment.enrollmentStatus !== 'active') throw new ValidationError('LMS enrollment is not active.');
     const quiz = this.assertTenantRecord(this.lmsQuizzes, input.quizId, input.organizationId, 'quiz');
     const quizCourse = this.lmsCourses.get(quiz.courseId);
     if (quizCourse?.programId !== enrollment.programId) {
       throw new ValidationError('Quiz must belong to the enrollment LMS program.');
+    }
+    const attempts = Array.from(this.lmsAttempts.values()).filter((attempt) =>
+      attempt.enrollmentId === enrollment.id && attempt.quizId === quiz.id
+    );
+    if (quiz.attemptState === 'closed') throw new ValidationError('Quiz attempts are closed.');
+    if (attempts.length >= Number(quiz.maxAttempts ?? 3)) {
+      throw new ValidationError('Maximum quiz attempts reached.');
+    }
+    if (quiz.examType === 'final') {
+      const progress = this.getLmsEnrollmentProgress(enrollment.id, input.organizationId);
+      if (!progress.finalExamUnlocked) throw new ValidationError('The final exam is locked until all required lessons are complete.');
+    } else if (quiz.lessonId) {
+      const state = this.getLmsLessonState(enrollment.id, quiz.lessonId, input.organizationId);
+      if (state.locked) throw new ValidationError(`Quiz is locked: ${state.lockReason}`);
     }
     const questions = Array.from(this.lmsQuestions.values()).filter((item) => item.quizId === quiz.id);
     if (questions.length === 0) throw new ValidationError('Quiz has no questions.');
@@ -387,23 +449,115 @@ export class EducationPlatformService extends FoundationService {
 
   getLmsEnrollmentProgress(enrollmentId, organizationId) {
     const enrollment = this.assertTenantRecord(this.lmsEnrollments, enrollmentId, organizationId, 'LMS enrollment');
-    const programCourseIds = new Set(Array.from(this.lmsCourses.values())
+    const programCourses = Array.from(this.lmsCourses.values())
       .filter((course) => course.programId === enrollment.programId)
-      .map((course) => course.id));
-    const moduleIds = new Set(Array.from(this.lmsModules.values())
-      .filter((module) => programCourseIds.has(module.courseId))
-      .map((module) => module.id));
-    const lessons = Array.from(this.lmsLessons.values()).filter((lesson) => moduleIds.has(lesson.moduleId));
+      .sort((left, right) => Number(left.position ?? 0) - Number(right.position ?? 0) || String(left.title).localeCompare(String(right.title)));
+    const coursePosition = new Map(programCourses.map((course, index) => [course.id, index]));
+    const modules = Array.from(this.lmsModules.values())
+      .filter((module) => coursePosition.has(module.courseId) && module.status !== 'archived')
+      .sort((left, right) =>
+        coursePosition.get(left.courseId) - coursePosition.get(right.courseId)
+        || Number(left.position) - Number(right.position)
+      );
+    const modulePosition = new Map(modules.map((module, index) => [module.id, index]));
+    const lessons = Array.from(this.lmsLessons.values())
+      .filter((lesson) => modulePosition.has(lesson.moduleId) && lesson.status !== 'archived')
+      .sort((left, right) =>
+        modulePosition.get(left.moduleId) - modulePosition.get(right.moduleId)
+        || Number(left.position) - Number(right.position)
+      );
     const progress = Array.from(this.lmsProgress.values()).filter((item) => item.enrollmentId === enrollmentId);
-    const completedLessonIds = new Set(progress.filter((item) => item.percent === 100).map((item) => item.lessonId));
-    const percent = lessons.length === 0 ? 0 : Math.round((completedLessonIds.size / lessons.length) * 10000) / 100;
+    const recordedCompletedLessonIds = new Set(progress.filter((item) => item.percent === 100).map((item) => item.lessonId));
+    const completedLessonIds = new Set(lessons.filter((lesson) => {
+      if (!recordedCompletedLessonIds.has(lesson.id)) return false;
+      const requiredQuizzes = Array.from(this.lmsQuizzes.values()).filter((quiz) =>
+        quiz.lessonId === lesson.id && quiz.required !== false
+      );
+      return requiredQuizzes.every((quiz) => Array.from(this.lmsAttempts.values()).some((attempt) =>
+        attempt.enrollmentId === enrollmentId && attempt.quizId === quiz.id && attempt.passed
+      ));
+    }).map((lesson) => lesson.id));
+    const requiredLessons = lessons.filter((lesson) => lesson.required !== false);
+    const completedRequired = requiredLessons.filter((lesson) => completedLessonIds.has(lesson.id)).length;
+    const percent = requiredLessons.length === 0 ? 0 : Math.round((completedRequired / requiredLessons.length) * 10000) / 100;
+    let blockedBy = null;
+    const lessonStates = lessons.map((lesson) => {
+      const completed = completedLessonIds.has(lesson.id);
+      let lockReason = null;
+      if (!completed && blockedBy) lockReason = `Complete ${blockedBy.title} first.`;
+      if (!completed && !lockReason && lesson.prerequisiteLessonId && !completedLessonIds.has(lesson.prerequisiteLessonId)) {
+        lockReason = 'Complete the configured prerequisite lesson first.';
+      }
+      const state = {
+        id: lesson.id,
+        moduleId: lesson.moduleId,
+        title: lesson.title,
+        position: lesson.position,
+        required: lesson.required !== false,
+        completed,
+        locked: Boolean(lockReason),
+        lockReason
+      };
+      if (!completed && lesson.required !== false && !blockedBy) blockedBy = lesson;
+      return state;
+    });
+    const finalExams = Array.from(this.lmsQuizzes.values()).filter((quiz) =>
+      quiz.examType === 'final' && quiz.required !== false && programCourses.some((course) => course.id === quiz.courseId)
+    );
+    const passedFinalExam = finalExams.length === 0 || finalExams.every((quiz) =>
+      Array.from(this.lmsAttempts.values()).some((attempt) =>
+        attempt.enrollmentId === enrollmentId && attempt.quizId === quiz.id && attempt.passed
+      )
+    );
+    const lessonsComplete = completedRequired === requiredLessons.length;
+    const hasLearningRequirements = lessons.length > 0 || finalExams.length > 0;
     return {
       enrollmentId,
-      completedLessons: completedLessonIds.size,
-      totalLessons: lessons.length,
+      completedLessons: completedRequired,
+      totalLessons: requiredLessons.length,
       percent,
-      completed: lessons.length > 0 && completedLessonIds.size === lessons.length
+      lessons: lessonStates,
+      completed: lessons.length > 0 && lessonsComplete,
+      finalExamRequired: finalExams.length > 0,
+      finalExamUnlocked: lessonsComplete,
+      finalExamPassed: passedFinalExam,
+      eligibleForTitle: hasLearningRequirements && lessonsComplete && passedFinalExam
     };
+  }
+
+  getLmsLessonState(enrollmentId, lessonId, organizationId) {
+    const progress = this.getLmsEnrollmentProgress(enrollmentId, organizationId);
+    const lesson = progress.lessons.find((item) => item.id === lessonId);
+    if (!lesson) throw new ValidationError('Lesson does not belong to this enrollment.');
+    return lesson;
+  }
+
+  async completeLmsLesson(input, actorId = null) {
+    const enrollment = this.assertTenantRecord(this.lmsEnrollments, input.enrollmentId, input.organizationId, 'LMS enrollment');
+    if (enrollment.enrollmentStatus !== 'active') throw new ValidationError('LMS enrollment is not active.');
+    const state = this.getLmsLessonState(input.enrollmentId, input.lessonId, input.organizationId);
+    if (state.locked) throw new ValidationError(`Lesson is locked: ${state.lockReason}`);
+    const requiredQuizzes = Array.from(this.lmsQuizzes.values()).filter((quiz) =>
+      quiz.lessonId === input.lessonId && quiz.required !== false
+    );
+    for (const quiz of requiredQuizzes) {
+      const passed = Array.from(this.lmsAttempts.values()).some((attempt) =>
+        attempt.enrollmentId === input.enrollmentId && attempt.quizId === quiz.id && attempt.passed
+      );
+      if (!passed) throw new ValidationError(`Pass the required quiz "${quiz.title}" before completing this lesson.`);
+    }
+    const existing = Array.from(this.lmsProgress.values()).find((item) =>
+      item.enrollmentId === input.enrollmentId && item.lessonId === input.lessonId && item.percent === 100
+    );
+    if (existing) return existing;
+    return this.createPlatformRecord('lmsProgress', {
+      organizationId: input.organizationId,
+      enrollmentId: input.enrollmentId,
+      lessonId: input.lessonId,
+      percent: 100,
+      workflowSource: 'server-completion',
+      completedAt: new Date().toISOString()
+    }, actorId);
   }
 
   getMeetingJoinDetails(meetingId, personId, organizationId) {

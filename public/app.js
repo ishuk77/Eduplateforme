@@ -549,14 +549,14 @@ const modules = [
     resources: [
       { id: 'lmsCatalogs', title: 'Catalogues', path: '/lms/catalogs', read: 'lms.read', write: 'lms.write', fields: [['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['description', 'Description', 'textarea', false]], columns: ['code', 'name', 'status'] },
       { id: 'lmsPrograms', title: 'Programmes LMS', path: '/lms/programs', read: 'lms.read', write: 'lms.write', fields: [['catalogId', 'Catalogue', 'reference', true, '/lms/catalogs', 'name'], ['academicProgramId', 'Programme académique', 'reference', true, '/academics/programs', 'name'], ['code', 'Code', 'text', true], ['title', 'Titre', 'text', true]], columns: ['code', 'title', 'catalogId', 'academicProgramId'] },
-      { id: 'lmsCourses', title: 'Cours LMS', path: '/lms/courses', read: 'lms.read', write: 'lms.write', fields: [['programId', 'Programme LMS', 'reference', true, '/lms/programs', 'title'], ['academicCourseId', 'Cours académique', 'reference', true, '/academics/courses', 'name'], ['code', 'Code', 'text', true], ['title', 'Titre', 'text', true]], columns: ['code', 'title', 'programId'] },
-      { id: 'lmsModules', title: 'Modules', path: '/lms/modules', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', true]], columns: ['position', 'title', 'courseId'] },
-      { id: 'lmsLessons', title: 'Leçons', path: '/lms/lessons', read: 'lms.read', write: 'lms.write', fields: [['moduleId', 'Module', 'reference', true, '/lms/modules', 'title'], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', true]], columns: ['position', 'title', 'moduleId'] },
+      { id: 'lmsCourses', title: 'Cours LMS', path: '/lms/courses', read: 'lms.read', write: 'lms.write', fields: [['programId', 'Programme LMS', 'reference', true, '/lms/programs', 'title'], ['academicCourseId', 'Cours académique', 'reference', true, '/academics/courses', 'name'], ['code', 'Code', 'text', true], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', false]], columns: ['code', 'title', 'position', 'programId'] },
+      { id: 'lmsModules', title: 'Chapitres', path: '/lms/modules', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', true], ['required', 'Obligatoire', 'checkbox', false]], columns: ['position', 'title', 'courseId', 'required'] },
+      { id: 'lmsLessons', title: 'Leçons', path: '/lms/lessons', read: 'lms.read', write: 'lms.write', fields: [['moduleId', 'Chapitre', 'reference', true, '/lms/modules', 'title'], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', true], ['prerequisiteLessonId', 'Prérequis explicite', 'reference', false, '/lms/lessons', 'title'], ['required', 'Obligatoire', 'checkbox', false]], columns: ['position', 'title', 'moduleId', 'required'] },
       { id: 'lmsResources', title: 'Ressources externes', path: '/lms/resources', read: 'lms.read', write: 'lms.write', fields: [['lessonId', 'Leçon', 'reference', true, '/lms/lessons', 'title'], ['title', 'Titre', 'text', true], ['externalReference', 'Référence externe', 'text', true], ['mediaType', 'Type MIME', 'text', false]], columns: ['title', 'externalReference', 'mediaType'] },
       { id: 'lmsParticipants', title: 'Participants', path: '/lms/participants', read: 'lms.read', write: 'lms.write', fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['role', 'Rôle', 'select', true, ['learner', 'teacher', 'facilitator', 'observer']]], columns: ['personId', 'role', 'status'] },
       { id: 'lmsEnrollments', title: 'Inscriptions LMS', path: '/lms/enrollments', read: 'lms.read', write: 'lms.write', fields: [['participantId', 'Participant', 'reference', true, '/lms/participants', 'personId'], ['programId', 'Programme LMS', 'reference', true, '/lms/programs', 'title']], columns: ['participantId', 'programId', 'enrollmentStatus'] },
       { id: 'lmsProgress', title: 'Progression', path: '/lms/progress', read: 'lms.read', write: 'lms.write', fields: [['enrollmentId', 'Inscription LMS', 'reference', true, '/lms/enrollments', 'id'], ['lessonId', 'Leçon', 'reference', true, '/lms/lessons', 'title'], ['percent', 'Progression (%)', 'number', true]], columns: ['enrollmentId', 'lessonId', 'percent', 'completedAt'] },
-      { id: 'lmsQuizzes', title: 'Quiz', path: '/lms/quizzes', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['title', 'Titre', 'text', true], ['passingScore', 'Seuil (%)', 'number', true]], columns: ['title', 'courseId', 'passingScore'], action: { label: 'Soumettre une tentative', path: '/lms/quizzes/:id/attempts', fields: [['enrollmentId', 'Inscription LMS', 'reference', true, '/lms/enrollments', 'id'], ['answers', 'Réponses par question (JSON)', 'json', true]] } },
+      { id: 'lmsQuizzes', title: 'Quiz et examen final', path: '/lms/quizzes', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['lessonId', 'Leçon (vide pour examen final)', 'reference', false, '/lms/lessons', 'title'], ['title', 'Titre', 'text', true], ['examType', 'Type', 'select', true, ['practice', 'lesson', 'final']], ['passingScore', 'Seuil (%)', 'number', true], ['maxAttempts', 'Tentatives maximum', 'number', true], ['attemptState', 'État des tentatives', 'select', true, ['open', 'closed']], ['required', 'Obligatoire', 'checkbox', false]], columns: ['title', 'courseId', 'lessonId', 'examType', 'passingScore', 'maxAttempts', 'attemptState'], action: { label: 'Soumettre une tentative', path: '/lms/quizzes/:id/attempts', fields: [['enrollmentId', 'Inscription LMS', 'reference', true, '/lms/enrollments', 'id'], ['answers', 'Réponses par question (JSON)', 'json', true]] } },
       { id: 'lmsQuestions', title: 'Questions', path: '/lms/questions', read: 'lms.read', write: 'lms.write', fields: [['quizId', 'Quiz', 'reference', true, '/lms/quizzes', 'title'], ['prompt', 'Question', 'textarea', true], ['questionType', 'Type', 'select', true, ['single', 'multiple', 'text']], ['options', 'Choix (JSON)', 'json', false], ['correctAnswer', 'Réponse attendue (JSON ou texte JSON)', 'json', true]], columns: ['quizId', 'prompt', 'questionType'] },
       { id: 'lmsAttempts', title: 'Tentatives', path: '/lms/attempts', read: 'lms.read', write: 'lms.write', create: false, createOnly: true, fields: [], columns: ['quizId', 'enrollmentId', 'score', 'passed', 'submittedAt'] },
       { id: 'lmsAssessments', title: 'Examens et évaluations', path: '/lms/assessments', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['title', 'Titre', 'text', true], ['assessmentType', 'Type', 'select', true, ['exam', 'evaluation', 'project']], ['gradingSystemId', 'Barème', 'reference', false, '/grading/systems', 'name']], columns: ['title', 'assessmentType', 'courseId'] },
@@ -793,6 +793,61 @@ async function apiRequest(path, options = {}, retry = true) {
   return payload;
 }
 
+async function apiUpload(path, formData) {
+  if (!navigator.onLine) throw new Error('Une connexion est requise pour téléverser un document officiel.');
+  const response = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: state.token ? { authorization: ['Bearer', state.token].join(' ') } : {},
+    body: formData
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(payload?.error?.message ?? `Téléversement impossible (${response.status}).`);
+  return payload;
+}
+
+async function downloadAuthenticated(path, fileName) {
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    headers: { authorization: ['Bearer', state.token].join(' ') }
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error?.message ?? `Téléchargement impossible (${response.status}).`);
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function openAuthenticatedHtml(path, targetWindow) {
+  if (!targetWindow) throw new Error('Autorisez les fenêtres contextuelles pour ouvrir le titre.');
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    headers: { authorization: ['Bearer', state.token].join(' ') }
+  });
+  if (!response.ok) throw new Error(`Vue imprimable impossible (${response.status}).`);
+  const url = URL.createObjectURL(await response.blob());
+  targetWindow.location.assign(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+async function loadSecureImages() {
+  await Promise.all([...document.querySelectorAll('[data-secure-image]')].map(async (image) => {
+    const response = await fetch(image.dataset.secureImage, {
+      credentials: 'same-origin',
+      headers: { authorization: ['Bearer', state.token].join(' ') }
+    });
+    if (!response.ok) return;
+    const url = URL.createObjectURL(await response.blob());
+    image.src = url;
+    image.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
+  }));
+}
+
 function persistOfflineQueue() {
   window.localStorage.setItem('eduplateforme.offlineQueue', JSON.stringify(state.offlineQueue));
 }
@@ -965,11 +1020,14 @@ function shell(content, activeId = 'dashboard') {
   return `
     <div class="app-shell">
       <aside class="shell-nav" id="shell-nav" data-open="false" aria-label="Navigation principale">
-        <a class="brand-mark" href="/dashboard">Eduplateforme</a>
+        <a class="brand-mark" href="/dashboard">${organization ? `<img class="tenant-logo" src="/public/organizations/${encodeURIComponent(organization.id)}/logo" alt="Logo de ${escapeHtml(organization.displayName)}">` : ''}<span>Eduplateforme</span></a>
         <p class="tenant-name">${escapeHtml(profile ? `${profile.givenName} ${profile.familyName}` : state.user?.username)}</p>
         <nav class="nav-links">
           <a class="nav-link ${activeId === 'dashboard' ? 'is-active' : ''}" href="/dashboard"><span>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' })}</span><small>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' }, 1)}</small></a>
           ${navigation}
+          <a class="nav-link ${activeId === 'myProfile' ? 'is-active' : ''}" href="/profile"><span>Mon profil</span><small>Préférences et confidentialité</small></a>
+          ${can('organizations.write') || can('credentials.write') || can('documents.write') ? `<a class="nav-link ${activeId === 'identityAssets' ? 'is-active' : ''}" href="/identity-assets"><span>Identité & preuves</span><small>Logo, signatures, justificatifs</small></a>` : ''}
+          ${can('lms.read') ? `<a class="nav-link ${activeId === 'learningPath' ? 'is-active' : ''}" href="/learning-path"><span>Mon parcours</span><small>Leçons, verrous et titres</small></a>` : ''}
           ${can('academics.write') && can('people.write') && can('accounts.write') ? `<a class="nav-link ${activeId === 'imports' ? 'is-active' : ''}" href="/imports"><span>Imports CSV/XLSX</span><small>Inscriptions et équipes</small></a>` : ''}
           <a class="nav-link ${activeId === 'help' ? 'is-active' : ''}" href="/help"><span>Guide des modules</span><small>Aide contextuelle</small></a>
         </nav>
@@ -1303,6 +1361,207 @@ async function importsPage() {
   });
 }
 
+async function profilePage() {
+  app.innerHTML = shell('<main class="content-stack"><section class="page-heading"><p class="section-label">Identité</p><h1>Mon profil</h1><p>Chargement du profil privé…</p></section></main>', 'myProfile');
+  bindShell();
+  try {
+    const profile = await apiRequest('/profile/me');
+    app.innerHTML = shell(`
+      <main class="content-stack" id="main-content">
+        <section class="page-heading"><p class="section-label">Self-service limité</p><h1>Mon profil</h1><p>Vous pouvez modifier vos contacts et préférences. Les rôles, affectations et champs officiels restent administrés par l’établissement.</p><a class="help-link" href="/help#profiles">Confidentialité et permissions</a></section>
+        <section class="surface-card profile-layout">
+          <div>
+            ${profile.avatar ? `<img class="profile-avatar" data-secure-image="/people/${encodeURIComponent(profile.id)}/avatar" alt="Photo de profil">` : '<div class="profile-avatar profile-avatar--empty" aria-label="Aucune photo">?</div>'}
+            <form id="avatar-form"><label>Photo PNG/JPEG (2 Mio maximum)<input name="file" type="file" accept="image/png,image/jpeg" required></label><button class="secondary-button" type="submit">Remplacer la photo</button></form>
+          </div>
+          <form id="profile-form" class="form-grid">
+            <label>Prénom officiel<input value="${escapeHtml(profile.givenName)}" disabled></label>
+            <label>Nom officiel<input value="${escapeHtml(profile.familyName)}" disabled></label>
+            <label>Nom usuel<input name="preferredName" value="${escapeHtml(profile.preferredName ?? '')}"></label>
+            <label>Langue<select name="preferredLocale">${SUPPORTED_LOCALES.map((locale) => `<option value="${locale}" ${profile.preferredLocale === locale ? 'selected' : ''}>${locale.toUpperCase()}</option>`).join('')}</select></label>
+            <label>Pays<select name="countryCode"><option value="">Non renseigné</option>${countryOptions(profile.countryCode)}</select></label>
+            <label>Fuseau horaire<input name="timezone" value="${escapeHtml(profile.timezone ?? '')}" placeholder="Africa/Dakar"></label>
+            <label class="form-wide">Adresse<textarea name="address">${escapeHtml(profile.address ?? '')}</textarea></label>
+            <label class="form-wide">Biographie<textarea name="bio">${escapeHtml(profile.bio ?? '')}</textarea></label>
+            <label class="form-wide">Contacts (JSON)<textarea name="contacts">${escapeHtml(JSON.stringify(profile.contacts ?? []))}</textarea></label>
+            <label class="form-wide">Préférences d’accessibilité (JSON)<textarea name="accessibility">${escapeHtml(JSON.stringify(profile.accessibility ?? {}))}</textarea></label>
+            <label class="form-wide">Préférences de notification (JSON)<textarea name="notifications">${escapeHtml(JSON.stringify(profile.notifications ?? {}))}</textarea></label>
+            <label class="checkbox-row"><input name="privacyConsent" type="checkbox" ${profile.privacyConsent ? 'checked' : ''}> J’accepte le stockage des informations privées optionnelles.</label>
+            <label class="form-wide">Contact d’urgence (JSON, avec consentement)<textarea name="emergencyContact">${escapeHtml(JSON.stringify(profile.emergencyContact ?? null))}</textarea></label>
+            <button class="primary-button" type="submit">Enregistrer mes préférences</button>
+          </form>
+        </section>
+        <section class="surface-card resource-section"><h2>Rôles et affectations en lecture seule</h2><p>${profile.roles.map((role) => escapeHtml(role.name)).join(' · ') || 'Aucun rôle affiché.'}</p><p>${profile.professionalAssignments.map((assignment) => escapeHtml(assignment.roleTitle)).join(' · ') || 'Aucune affectation professionnelle.'}</p></section>
+      </main>`, 'myProfile');
+    bindShell();
+    await loadSecureImages();
+    document.querySelector('#profile-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = new FormData(event.currentTarget);
+      const body = Object.fromEntries(data.entries());
+      try {
+        body.privacyConsent = data.get('privacyConsent') === 'on';
+        for (const field of ['contacts', 'accessibility', 'notifications', 'emergencyContact']) {
+          body[field] = JSON.parse(body[field] || (field === 'contacts' ? '[]' : '{}'));
+        }
+        if (!body.address) delete body.address;
+        await apiRequest('/profile/me', { method: 'PUT', body: JSON.stringify(body) });
+        notification('Profil enregistré.');
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    });
+    document.querySelector('#avatar-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = new FormData(event.currentTarget);
+      try {
+        await apiUpload('/profile/me/avatar', data);
+        notification('Photo de profil enregistrée.');
+        await profilePage();
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    });
+  } catch (error) {
+    notification(error.message, 'error');
+  }
+}
+
+async function identityAssetsPage() {
+  app.innerHTML = shell('<main class="content-stack"><section class="page-heading"><p class="section-label">Identité institutionnelle</p><h1>Logo, signatures et preuves</h1><p>Chargement des médias sécurisés…</p></section></main>', 'identityAssets');
+  bindShell();
+  const organizationId = state.user.organizationId;
+  try {
+    const [branding, signatures, people, documents] = await Promise.all([
+      can('organizations.read') ? apiRequest(`/organizations/${organizationId}/branding`) : null,
+      can('credentials.read') ? apiRequest(`/signatures?organizationId=${encodeURIComponent(organizationId)}`) : { items: [] },
+      can('people.read') ? apiRequest('/people?limit=200') : { items: [] },
+      can('documents.read') ? apiRequest('/documents?limit=200') : { items: [] }
+    ]);
+    const evidence = documents.items.filter((document) => document.metadata?.source === 'evidence-upload');
+    const peopleOptions = people.items.map((person) => `<option value="${escapeHtml(person.id)}">${escapeHtml(`${person.givenName} ${person.familyName}`)}</option>`).join('');
+    app.innerHTML = shell(`
+      <main class="content-stack" id="main-content">
+        <section class="page-heading"><p class="section-label">Configuration et dossiers</p><h1>Identité, signatures et preuves</h1><p>Les images et preuves sont vérifiées puis stockées en base; aucune signature électronique qualifiée n’est revendiquée.</p><a class="help-link" href="/help#documents">Règles, limites et workflow</a></section>
+        ${can('organizations.write') ? `<section class="surface-card resource-section"><h2>Logo institutionnel</h2>${branding ? `<img class="institution-logo-preview" src="/public/organizations/${encodeURIComponent(organizationId)}/logo" alt="${escapeHtml(branding.altText)}"><p>SHA-256 ${escapeHtml(branding.sha256)}</p>` : '<p class="empty-state">Aucun logo configuré.</p>'}<form id="logo-form" class="form-grid"><label>Logo PNG/JPEG (1 Mio, 4096×4096 max.)<input name="file" type="file" accept="image/png,image/jpeg" required></label><label>Texte alternatif<input name="altText" value="Logo institutionnel" required></label><button class="primary-button" type="submit">${branding ? 'Remplacer' : 'Ajouter'} le logo</button>${branding ? '<button class="danger-button" id="remove-logo" type="button">Supprimer le logo</button>' : ''}</form></section>` : ''}
+        ${can('credentials.write') ? `<section class="surface-card resource-section"><h2>Signataires habilités</h2><p>Une signature est une marque visuelle auditée, révocable et liée à une personne/fonction.</p><form id="signature-form" class="form-grid"><label>Titulaire<select name="personId" required><option value="">Sélectionner</option>${peopleOptions}</select></label><label>Fonction<input name="function" required></label><label>Objectif<input name="purpose" required placeholder="Délivrance des attestations"></label><label>Image PNG/JPEG (1 Mio)<input name="file" type="file" accept="image/png,image/jpeg" required></label><button class="primary-button" type="submit">Ajouter la signature</button></form><div class="record-grid">${signatures.items.map((signature) => `<article class="record-card"><img class="signature-preview" data-secure-image="/signatures/${encodeURIComponent(signature.id)}/content" alt="Signature de ${escapeHtml(signature.holderName)}"><h3>${escapeHtml(signature.holderName)}</h3><p>${escapeHtml(signature.function)} · ${escapeHtml(signature.purpose)}</p><p>${signature.active ? 'Active' : 'Révoquée'} · SHA-256 ${escapeHtml(signature.sha256.slice(0, 12))}…</p>${signature.active ? `<button class="danger-button" data-revoke-signature="${escapeHtml(signature.id)}" type="button">Révoquer</button>` : ''}</article>`).join('') || '<p class="empty-state">Aucun signataire configuré.</p>'}</div></section>` : ''}
+        ${can('documents.write') ? `<section class="surface-card resource-section"><h2>Importer un document de preuve</h2><form id="evidence-form" class="form-grid"><label>Personne<select name="personId" required><option value="">Sélectionner</option>${peopleOptions}</select></label><label>Type<select name="type"><option value="receipt">Reçu</option><option value="report-card">Bulletin</option><option value="certificate">Certificat</option><option value="attestation">Attestation</option><option value="diploma">Diplôme</option></select></label><label>Titre<input name="title" required></label><label>Fichier PDF/PNG/JPEG (8 Mio)<input name="file" type="file" accept="application/pdf,image/png,image/jpeg" required></label><button class="primary-button" type="submit">Importer la preuve</button></form></section>` : ''}
+        <section class="surface-card resource-section"><h2>Preuves importées</h2><div class="record-grid">${evidence.map((document) => `<article class="record-card"><h3>${escapeHtml(document.title)}</h3><p>${escapeHtml(document.type)} · ${escapeHtml(document.metadata.verification.status)}</p><p>SHA-256 ${escapeHtml(document.fileHash.slice(0, 16))}…</p><button class="secondary-button" data-download-evidence="${escapeHtml(document.id)}" data-file-name="${escapeHtml(document.metadata.fileName)}" type="button">Télécharger</button>${can('documents.verify') && document.metadata.verification.status === 'pending' ? `<button class="primary-button" data-verify-evidence="${escapeHtml(document.id)}" type="button">Valider</button>` : ''}</article>`).join('') || '<p class="empty-state">Aucune preuve importée.</p>'}</div></section>
+      </main>`, 'identityAssets');
+    bindShell();
+    await loadSecureImages();
+    for (const [formId, path] of [['logo-form', `/organizations/${organizationId}/branding/logo`], ['signature-form', '/signatures'], ['evidence-form', '/documents/evidence']]) {
+      document.querySelector(`#${formId}`)?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        if (formId !== 'logo-form') data.append('organizationId', organizationId);
+        try {
+          await apiUpload(path, data);
+          notification('Fichier enregistré et audité.');
+          await identityAssetsPage();
+        } catch (error) {
+          notification(error.message, 'error');
+        }
+      });
+    }
+    document.querySelector('#remove-logo')?.addEventListener('click', async () => {
+      if (!window.confirm('Supprimer le logo institutionnel ?')) return;
+      try {
+        await apiRequest(`/organizations/${organizationId}/branding/logo`, { method: 'DELETE' });
+        await identityAssetsPage();
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    });
+    document.querySelectorAll('[data-revoke-signature]').forEach((button) => button.addEventListener('click', async () => {
+      const reason = window.prompt('Motif de révocation');
+      if (!reason) return;
+      try {
+        await apiRequest(`/signatures/${button.dataset.revokeSignature}/revoke`, { method: 'POST', body: JSON.stringify({ reason }) });
+        await identityAssetsPage();
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    }));
+    document.querySelectorAll('[data-download-evidence]').forEach((button) => button.addEventListener('click', () =>
+      downloadAuthenticated(`/documents/${button.dataset.downloadEvidence}/content`, button.dataset.fileName)
+        .catch((error) => notification(error.message, 'error'))
+    ));
+    document.querySelectorAll('[data-verify-evidence]').forEach((button) => button.addEventListener('click', async () => {
+      try {
+        await apiRequest(`/documents/${button.dataset.verifyEvidence}/verification`, {
+          method: 'POST',
+          body: JSON.stringify({ status: 'verified' })
+        });
+        await identityAssetsPage();
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    }));
+  } catch (error) {
+    notification(error.message, 'error');
+  }
+}
+
+async function learningPathPage() {
+  app.innerHTML = shell('<main class="content-stack"><section class="page-heading"><p class="section-label">Apprentissage</p><h1>Mon parcours</h1><p>Calcul des prérequis côté serveur…</p></section></main>', 'learningPath');
+  bindShell();
+  try {
+    const [enrollments, signatures] = await Promise.all([
+      apiRequest('/lms/enrollments?limit=100'),
+      can('credentials.read')
+        ? apiRequest(`/signatures?organizationId=${encodeURIComponent(state.user.organizationId)}`)
+        : { items: [] }
+    ]);
+    const activeSignatures = signatures.items.filter((signature) => signature.active && !signature.revokedAt);
+    const accessible = [];
+    for (const enrollment of enrollments.items) {
+      try {
+        accessible.push({ enrollment, progress: await apiRequest(`/lms/enrollments/${enrollment.id}/progress-detail`) });
+      } catch {
+        // Other learners' enrollments are intentionally hidden.
+      }
+    }
+    app.innerHTML = shell(`
+      <main class="content-stack" id="main-content">
+        <section class="page-heading"><p class="section-label">Parcours serveur</p><h1>Leçons, examen final et titres</h1><p>Les leçons suivantes et l’examen restent verrouillés tant que les exigences précédentes ne sont pas satisfaites.</p><a class="help-link" href="/help#lms">Comprendre les règles de progression</a></section>
+        ${accessible.map(({ enrollment, progress }) => `<section class="surface-card resource-section"><div class="section-header"><div><p class="section-label">Inscription ${escapeHtml(enrollment.id)}</p><h2>${progress.percent}% terminé</h2></div><strong>${progress.eligibleForTitle ? 'Titre délivrable' : progress.finalExamUnlocked ? 'Examen final disponible' : 'Parcours en cours'}</strong></div><div class="progress-track" role="progressbar" aria-label="Progression du parcours" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.percent}"><span style="width:${progress.percent}%"></span></div><ol class="learning-sequence">${progress.lessons.map((lesson) => `<li class="${lesson.locked ? 'is-locked' : lesson.completed ? 'is-complete' : ''}"><strong>${escapeHtml(lesson.title)}</strong><span>${lesson.completed ? 'Validée' : lesson.locked ? escapeHtml(lesson.lockReason) : 'Disponible'}</span>${!lesson.completed && !lesson.locked ? `<button class="primary-button" data-complete-lesson="${escapeHtml(lesson.id)}" data-enrollment="${escapeHtml(enrollment.id)}" type="button">Valider la leçon</button>` : ''}</li>`).join('')}</ol>${progress.eligibleForTitle && can('lms.write') && can('credentials.write') ? `<form class="title-form form-grid" data-enrollment="${escapeHtml(enrollment.id)}"><label>Type de titre<select name="titleType"><option value="certificate">Certificat</option><option value="attestation">Attestation</option><option value="diploma">Diplôme</option></select></label><label>Signataire actif<select name="signatureId" required><option value="">Sélectionner</option>${activeSignatures.map((signature) => `<option value="${escapeHtml(signature.id)}">${escapeHtml(signature.holderName)} — ${escapeHtml(signature.function)}</option>`).join('')}</select></label><button class="primary-button" type="submit" ${activeSignatures.length ? '' : 'disabled'}>Délivrer le titre</button><small class="form-wide">${activeSignatures.length ? 'Titre émis par la plateforme; aucune accréditation officielle n’est affirmée sans autorité configurée.' : 'Configurez d’abord un signataire actif dans Identité & preuves.'}</small></form>` : ''}</section>`).join('') || '<section class="surface-card empty-state"><h2>Aucun parcours accessible</h2><p>Un administrateur doit créer un participant et une inscription LMS.</p></section>'}
+      </main>`, 'learningPath');
+    bindShell();
+    document.querySelectorAll('[data-complete-lesson]').forEach((button) => button.addEventListener('click', async () => {
+      try {
+        await apiRequest(`/lms/enrollments/${button.dataset.enrollment}/lessons/${button.dataset.completeLesson}/complete`, {
+          method: 'POST',
+          body: '{}'
+        });
+        await learningPathPage();
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    }));
+    document.querySelectorAll('.title-form').forEach((form) => form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const printWindow = window.open('', '_blank');
+      try {
+        const body = Object.fromEntries(new FormData(event.currentTarget));
+        body.signatureIds = [body.signatureId];
+        delete body.signatureId;
+        const result = await apiRequest(`/lms/enrollments/${event.currentTarget.dataset.enrollment}/titles`, {
+          method: 'POST',
+          body: JSON.stringify(body)
+        });
+        notification(`Titre ${result.credential.credentialNumber} délivré.`);
+        await openAuthenticatedHtml(`/credentials/${result.credential.id}/print`, printWindow);
+      } catch (error) {
+        printWindow?.close();
+        notification(error.message, 'error');
+      }
+    }));
+  } catch (error) {
+    notification(error.message, 'error');
+  }
+}
+
 async function helpPage() {
   app.innerHTML = shell('<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">Aide</p><h1>Guide des modules</h1><p>Chargement du guide versionné…</p></section></main>', 'help');
   bindShell();
@@ -1324,6 +1583,9 @@ function bindShell() {
   const navigation = document.querySelector('#shell-nav');
   const toggle = document.querySelector('#menu-toggle');
   const backdrop = document.querySelector('#nav-backdrop');
+  document.querySelector('.tenant-logo')?.addEventListener('error', (event) => {
+    event.currentTarget.hidden = true;
+  }, { once: true });
   const setOpen = (open) => {
     navigation?.setAttribute('data-open', String(open));
     toggle?.setAttribute('aria-expanded', String(open));
@@ -1745,6 +2007,18 @@ async function route() {
   }
   if (path === '/imports') {
     await importsPage();
+    return;
+  }
+  if (path === '/profile') {
+    await profilePage();
+    return;
+  }
+  if (path === '/identity-assets') {
+    await identityAssetsPage();
+    return;
+  }
+  if (path === '/learning-path') {
+    await learningPathPage();
     return;
   }
   if (path === '/help') {
