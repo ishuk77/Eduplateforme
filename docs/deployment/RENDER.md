@@ -13,6 +13,8 @@ une base PostgreSQL managée. Le build exécute `npm ci`, le démarrage exécute
 3. Laisser Render injecter `DATABASE_URL` depuis `eduplateforme-db`.
 4. Conserver les valeurs générées par Render pour `JWT_SECRET` et
    `DATA_ENCRYPTION_KEY`; ne jamais les placer dans Git.
+5. Conserver `DOMAIN_PROVIDER_MODE=disabled` tant qu’un contrat registrar,
+   un compte prépayé et un flux de paiement authentifié ne sont pas prêts.
 
 En production, le processus refuse de démarrer si `DATABASE_URL`,
 `CORS_ORIGIN`, `JWT_SECRET` ou `DATA_ENCRYPTION_KEY` est absent ou invalide.
@@ -43,3 +45,45 @@ comme saine.
 Après le déploiement, ouvrez l’URL publique et utilisez **Créer un compte**.
 L’onboarding crée la première organisation et le rôle administrateur associé;
 aucune initialisation manuelle de PostgreSQL n’est requise.
+
+## Revente de domaines
+
+Le déploiement par défaut **ne peut acheter aucun domaine**. Les commandes
+restent `pending_payment`; une inscription n’est soumise qu’après confirmation
+manuelle auditée par un administrateur plateforme ou, à terme, après un webhook
+de paiement authentifié. Aucun webhook de paiement n’est inclus dans cette
+version.
+
+Modes disponibles :
+
+- `DOMAIN_PROVIDER_MODE=disabled` : aucun devis registrar ni achat;
+- `DOMAIN_PROVIDER_MODE=manual` : registre interne seulement, sans transaction;
+- `DOMAIN_PROVIDER_MODE=openprovider` : adaptateur HTTPS `/v1`, activé uniquement
+  si `OPENPROVIDER_USERNAME`, `OPENPROVIDER_PASSWORD`,
+  `OPENPROVIDER_OWNER_HANDLE`, `OPENPROVIDER_ADMIN_HANDLE`,
+  `OPENPROVIDER_BILLING_HANDLE` et `OPENPROVIDER_TECH_HANDLE` existent.
+
+Variables facultatives : `OPENPROVIDER_BASE_URL` (défaut
+`https://api.openprovider.eu/v1`), `OPENPROVIDER_ENVIRONMENT`,
+`OPENPROVIDER_TIMEOUT_MS` et `DOMAIN_PROVIDER_LOW_BALANCE_THRESHOLD`.
+Les identifiants restent exclusivement dans l’environnement Render. L’API et
+l’interface n’exposent qu’un état masqué et ne journalisent jamais ces valeurs.
+
+Avant toute activation live :
+
+1. signer le contrat revendeur et financer le solde registrar;
+2. configurer un fournisseur de paiement et son webhook signé;
+3. vérifier les prix de vente/renouvellement et dates d’effet dans le catalogue;
+4. exécuter une commande de bout en bout dans un environnement registrar de test;
+5. configurer le CNAME/TXT externe et ajouter le domaine dans Render afin que le
+   certificat TLS soit émis;
+6. tester les notifications à 60, 30, 15 et 7 jours et la procédure de transfert.
+
+L’institution reste le titulaire et propriétaire du domaine. Eduplateforme est
+revendeur et gestionnaire technique. Les frais SaaS (mensuels ou annuels) et de
+domaine (annuels) sont des lignes distinctes. Une promotion de première année ne
+modifie pas le prix de renouvellement annoncé. La résiliation ne verrouille pas
+le domaine : le transfert reste possible et la conservation des données suit la
+période de grâce contractuelle. Les remboursements exigent une réconciliation
+manuelle avec le paiement et le registrar; aucun échec fournisseur ne doit être
+présenté comme payé ou enregistré.

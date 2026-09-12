@@ -26,6 +26,10 @@ services:
         value: "10"
       - key: AUTH_RATE_LIMIT_WINDOW_MS
         value: "900000"
+      - key: DOMAIN_PROVIDER_MODE
+        value: disabled
+      - key: DOMAIN_PROVIDER_LOW_BALANCE_THRESHOLD
+        value: "100"
 
 databases:
   - name: eduplateforme-db
