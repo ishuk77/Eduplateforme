@@ -87,12 +87,19 @@ async function addLearner(service, context, suffix, status = 'active') {
 }
 
 test('landing exposes only Connexion and Créer un compte access actions', async () => {
-  const source = await readFile(new URL('../../public/app.js', import.meta.url), 'utf8');
+  const service = createPersistentEducationPlatformService({ databaseUrl: 'sqlite::memory:' });
+  const app = createApp({ foundation: service });
+  const response = await app(new Request('http://localhost/app.js'));
+  const source = await response.text();
+  const styles = await readFile(new URL('../../public/styles.css', import.meta.url), 'utf8');
   const landingSource = source.slice(source.indexOf('function landing()'), source.indexOf('function onboarding()'));
+  assert.equal(response.status, 200);
   assert.match(landingSource, />Connexion</);
   assert.match(landingSource, />Créer un compte</);
   assert.doesNotMatch(landingSource, /Créer mon compte administrateur|J’ai déjà un compte|Vérifier une institution|Vérifier un diplôme/);
   assert.equal((landingSource.match(/href="\/(login|register)"/g) ?? []).length, 2);
+  assert.doesNotMatch(styles, /\.public-header nav \.secondary-button\s*\{\s*display:\s*none/);
+  await service.close();
 });
 
 test('custom domains normalize, remain unique, verify ownership, resolve hosts and audit governance', async () => {
