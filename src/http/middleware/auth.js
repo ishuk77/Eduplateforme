@@ -79,6 +79,15 @@ export function requireIdentity(request, service) {
   if (!identity) {
     throw new ApiError('AUTH_INVALID', 'Access token is invalid or expired.', 401);
   }
+  const domain = service.getCustomDomainForHost?.(new URL(request.url).hostname) ?? null;
+  if (domain) {
+    if (domain.verificationState !== 'verified' || domain.accessState !== 'active') {
+      throw new ApiError('DOMAIN_UNAVAILABLE', 'This institution domain is not active.', 403);
+    }
+    if (!identity.organizationIds.includes(domain.organizationId)) {
+      throw new ApiError('FORBIDDEN', 'This account does not belong to the institution associated with this domain.', 403);
+    }
+  }
 
   requestIdentityStore.set(request, identity);
   return identity;

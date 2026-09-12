@@ -185,6 +185,9 @@ export function registerOperationsRoutes(router, { service }) {
         ,
         { question: 'Les signatures et diplômes ont-ils une valeur juridique garantie ?', answer: 'Non. Une signature est une marque visuelle auditée. Un titre est émis par la plateforme et ne doit être présenté comme officiel ou accrédité que si une autorité valide est configurée et vérifiée.' },
         { question: 'Où sont stockés les fichiers ?', answer: 'Les logos, signatures, avatars et preuves sont stockés de façon bornée dans la base configurée; aucun fichier ne dépend du disque éphémère de Render.' }
+        ,
+        { question: 'Comment relier le domaine de mon institution ?', answer: 'Ajoutez le domaine dans Organisations, publiez le TXT indiqué, lancez la vérification puis configurez séparément le domaine personnalisé et TLS dans Render. Cette association ne déplace pas la base de données et ne modifie pas un site tiers.' },
+        { question: 'Comment publier un devoir ou faire l’appel ?', answer: 'Choisissez toujours une classe et un cours. La publication détermine côté serveur les inscrits actifs; l’appel charge ensuite la liste complète et exige un seul statut par participant.' }
       ],
       localeCoverage: {
         supported: ['fr', 'en', 'es', 'pt', 'ar'],

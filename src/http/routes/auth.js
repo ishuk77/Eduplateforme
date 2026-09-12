@@ -40,6 +40,16 @@ function withRefreshCookie(payload, { clear = false, status = 200 } = {}) {
 export function registerAuthRoutes(router, { service }) {
   router.add('POST', '/auth/login', async (request) => {
     const body = await parseJson(request, loginSchema);
+    const domain = service.getCustomDomainForHost?.(new URL(request.url).hostname) ?? null;
+    if (domain) {
+      if (domain.verificationState !== 'verified' || domain.accessState !== 'active') {
+        throw new ApiError('DOMAIN_UNAVAILABLE', 'This institution domain is not active.', 403);
+      }
+      if (body.organizationId && body.organizationId !== domain.organizationId) {
+        throw new ApiError('FORBIDDEN', 'The selected institution does not match this domain.', 403);
+      }
+      body.organizationId = domain.organizationId;
+    }
     return withRefreshCookie(await service.authenticate(body));
   });
 

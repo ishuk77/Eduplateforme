@@ -1,5 +1,5 @@
 import { parseJson } from '../middleware/validation.js';
-import { authorizeRequest } from '../middleware/auth.js';
+import { authorizeRequest, requireIdentity } from '../middleware/auth.js';
 import { makeCrudHandlers } from './_helpers.js';
 import { ValidationError } from '../../shared/entity.js';
 
@@ -34,6 +34,25 @@ export function registerAssignmentRoutes(router, { service }) {
     }
     const identity = authorizeRequest(request, service, { organizationId: submission.organizationId, permissions: ['assignments.write'] });
     return Response.json(await service.gradeSubmission(body.submissionId, body, identity.actorId), { status: 201 });
+  });
+
+  router.add('POST', '/assignments/:id/publish', async (request, _url, params) => {
+    const assignment = service.assignments.get(params.id);
+    if (!assignment) throw new ValidationError(`Unknown assignment: ${params.id}`);
+    const identity = authorizeRequest(request, service, {
+      organizationId: assignment.organizationId,
+      permissions: ['assignments.write'],
+      context: { resource: 'assignments', action: 'write', scopeType: 'class', scopeId: assignment.classId }
+    });
+    return Response.json(await service.publishAssignment(params.id, identity.actorId));
+  });
+
+  router.add('GET', '/assignments/visible/me', async (request, url) => {
+    const identity = requireIdentity(request, service);
+    const organizationId = url.searchParams.get('organizationId') ?? identity.organizationId;
+    authorizeRequest(request, service, { organizationId, permissions: ['assignments.read'] });
+    const learner = service.getLearnerForAccount(identity.accountId, organizationId);
+    return Response.json(service.listVisibleAssignments({ organizationId, learnerId: learner.id }));
   });
 
   router.add('POST', '/assignments', handlers.create);

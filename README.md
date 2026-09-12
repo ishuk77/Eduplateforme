@@ -118,6 +118,12 @@ managed PostgreSQL database, automatic migrations, production secret
 validation, explicit `PORT`/`0.0.0.0` binding, and a database-aware health
 check. See [`docs/deployment/RENDER.md`](docs/deployment/RENDER.md).
 
+### Tenant custom domains
+
+Institution administrators can register a public hostname from **Organizations**. Eduplateforme normalizes the hostname, enforces application-wide uniqueness, generates a DNS TXT ownership challenge, and enables host-based tenant resolution only after successful verification. Platform administrators can inspect configuration metadata and auditably suspend, reactivate, or repair access without reading arbitrary tenant records.
+
+This does **not** migrate or duplicate the tenant database, take over an existing website, or change third-party DNS automatically. Data remains in the shared, tenant-isolated database. After TXT verification, an operator must also add the hostname to the Render service and configure the displayed CNAME/ALIAS record so Render can provision routing and TLS. The shared `*.onrender.com` URL remains available.
+
 > Security note: `.env.example` contains no secret value. Render generates the
 > production secrets, and local Docker requires them through environment
 > variables.

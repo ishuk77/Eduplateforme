@@ -1,5 +1,5 @@
 import { parsePagination } from '../middleware/validation.js';
-import { authorizeRequest } from '../middleware/auth.js';
+import { authorizeRequest, requireIdentity } from '../middleware/auth.js';
 import { makeCrudHandlers } from './_helpers.js';
 import { ApiError } from '../../shared/errors.js';
 
@@ -52,5 +52,16 @@ export function registerGradingRoutes(router, { service }) {
       organizationId,
       learnerId
     }));
+  });
+
+  router.add('GET', '/grading/me', async (request, url) => {
+    const identity = requireIdentity(request, service);
+    const organizationId = url.searchParams.get('organizationId') ?? identity.organizationId;
+    const permissions = service.getAccountPermissions(identity.accountId, organizationId);
+    if (!permissions.includes('*') && !permissions.includes('grading.read') && !permissions.includes('grading.self')) {
+      throw new ApiError('FORBIDDEN', 'Missing permission: grading.self', 403);
+    }
+    const learner = service.getLearnerForAccount(identity.accountId, organizationId);
+    return Response.json(service.getLearnerGradebook({ organizationId, learnerId: learner.id }));
   });
 }

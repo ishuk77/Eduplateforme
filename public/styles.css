@@ -212,6 +212,10 @@ button:disabled { cursor: wait; opacity: .6; }
 .table-scroll { overflow-x: auto; margin-block: 1rem; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: .75rem; border-bottom: 1px solid var(--border); text-align: start; vertical-align: top; }
+.status-choice { display: inline-grid; place-items: center; min-width: 2.75rem; min-height: 2.75rem; cursor: pointer; }
+.status-choice input { width: 1.15rem; height: 1.15rem; }
+.grade-course { border: 1px solid var(--border); border-radius: .75rem; margin-top: .75rem; }
+.grade-course summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem; padding: 1rem; cursor: pointer; }
 td code { white-space: normal; overflow-wrap: anywhere; }
 .sync-status { color: var(--muted); font-size: .82rem; font-weight: 700; }
 .content-stack { width: min(72rem, calc(100% - 2rem)); margin: auto; padding-bottom: 2rem; display: grid; gap: 1rem; }

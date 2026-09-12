@@ -363,7 +363,7 @@ test('configuration screens expose bounded controls, import entries, help anchor
   assert.match(appSource, /localized-labels/);
   assert.match(appSource, /helpAnchor: 'payment-activation'/);
   assert.match(appSource, /Référence interne \(option avancée\)/);
-  assert.match(appSource, /Créer mon compte administrateur/);
+  assert.doesNotMatch(appSource, /Créer mon compte administrateur/);
   assert.match(appSource, /Créez votre compte administrateur/);
   assert.match(appSource, /Après connexion, vous pourrez créer une école, une université\/institution supérieure ou un centre de formation\./);
   assert.doesNotMatch(appSource, /Créer mon école|Commencez avec votre école|établissement créé à l’étape suivante/);
