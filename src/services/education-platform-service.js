@@ -170,6 +170,7 @@ export class EducationPlatformService extends FoundationService {
     this.scheduleEntries = new Map();
     this.assignments = new Map();
     this.assignmentSubmissions = new Map();
+    this.customDomains = new Map();
     this.reportCards = new Map();
     this.fees = new Map();
     this.invoices = new Map();
@@ -1125,9 +1126,13 @@ export class EducationPlatformService extends FoundationService {
 
   recordGrade(input, actorId = null) {
     this.assertOrganizationContext(input.organizationId);
-    this.assertExists(this.learners, input.learnerId, 'learner');
+    const learner = this.assertTenantRecord(this.learners, input.learnerId, input.organizationId, 'learner');
     if (input.assignmentId) {
-      this.assertExists(this.assignments, input.assignmentId, 'assignment');
+      const assignment = this.assertTenantRecord(this.assignments, input.assignmentId, input.organizationId, 'assignment');
+      if (assignment.status === 'published' && !assignment.legacyRecipientScope
+        && !assignment.recipientLearnerIds.includes(learner.id)) {
+        throw new ValidationError('Learner is not a recipient of this assignment.');
+      }
     }
 
     const previous = Array.from(this.grades.values())
@@ -1157,6 +1162,7 @@ export class EducationPlatformService extends FoundationService {
       if (!currentLatest || grade.version > currentLatest.version) {
         latestByAssessment.set(assessmentKey, grade);
       }
+
     }
     const effectiveGrades = Array.from(latestByAssessment.values());
 
@@ -1171,6 +1177,65 @@ export class EducationPlatformService extends FoundationService {
       weightedPoints: Number(weightedPoints.toFixed(2)),
       totalCoefficients
     };
+  }
+
+  getLearnerGradebook({ organizationId, learnerId }) {
+    this.assertTenantRecord(this.learners, learnerId, organizationId, 'learner');
+    const latest = new Map();
+    for (const grade of this.grades.values()) {
+      if (grade.organizationId !== organizationId || grade.learnerId !== learnerId) continue;
+      const key = grade.assignmentId ?? grade.id;
+      const current = latest.get(key);
+      if (!current || grade.version > current.version) latest.set(key, grade);
+    }
+    const groups = new Map();
+    for (const grade of latest.values()) {
+      const assignment = grade.assignmentId ? this.assignments.get(grade.assignmentId) : null;
+      const course = assignment?.courseId ? this.courses.get(assignment.courseId) : null;
+      const subject = course?.subjectId ? this.subjects.get(course.subjectId) : null;
+      const courseId = course?.id ?? 'unassigned';
+      const group = groups.get(courseId) ?? {
+        courseId: course?.id ?? null,
+        courseName: course?.name || subject?.name || 'Matière non renseignée',
+        subjectName: subject?.name || course?.name || 'Matière non renseignée',
+        assessments: []
+      };
+      group.assessments.push({
+        gradeId: grade.id,
+        assignmentId: assignment?.id ?? null,
+        title: assignment?.title || 'Évaluation',
+        type: assignment?.type ?? 'assessment',
+        score: grade.score,
+        maxScore: grade.maxScore,
+        coefficient: grade.coefficient,
+        weightedResult: Number((grade.normalizedScore * grade.coefficient).toFixed(2)),
+        date: grade.gradedAt ?? grade.updatedAt ?? grade.createdAt
+      });
+      groups.set(courseId, group);
+    }
+    return {
+      learnerId,
+      courses: Array.from(groups.values()).map((group) => {
+        const totalWeight = group.assessments.reduce((sum, item) => sum + Number(item.coefficient), 0);
+        const weightedPoints = group.assessments.reduce((sum, item) => sum + item.weightedResult, 0);
+        return {
+          ...group,
+          summary: {
+            totalWeight,
+            averageOn20: totalWeight ? Number((weightedPoints / totalWeight).toFixed(2)) : null
+          }
+        };
+      })
+    };
+  }
+
+  getLearnerForAccount(accountId, organizationId) {
+    const account = this.accounts.get(accountId);
+    if (!account) throw new ValidationError(`Unknown account: ${accountId}`);
+    const learner = Array.from(this.learners.values()).find((candidate) =>
+      candidate.organizationId === organizationId && candidate.personId === account.personId);
+    if (!learner) throw new ValidationError('The authenticated account is not linked to a learner in this institution.');
+    return learner;
   }
 
   listGrades({ organizationId, learnerId = null, limit, offset } = {}) {
@@ -1191,8 +1256,14 @@ export class EducationPlatformService extends FoundationService {
 
   recordAttendance(input, actorId = null) {
     this.assertOrganizationContext(input.organizationId);
-    this.assertExists(this.learners, input.learnerId, 'learner');
-    this.assertExists(this.classes, input.classId, 'class');
+    this.assertTenantRecord(this.learners, input.learnerId, input.organizationId, 'learner');
+    this.assertTenantRecord(this.classes, input.classId, input.organizationId, 'class');
+    if (input.courseId) {
+      const course = this.assertTenantRecord(this.courses, input.courseId, input.organizationId, 'course');
+      if (course.classId && course.classId !== input.classId) {
+        throw new ValidationError('Attendance course must belong to the selected class.');
+      }
+    }
     const record = new AttendanceRecord(input);
     this.attendance.set(record.id, record);
     this.recordEvent('attendance.recorded', record, actorId, { status: record.status });
@@ -1250,10 +1321,115 @@ export class EducationPlatformService extends FoundationService {
     if (learningClass.organizationId !== input.organizationId) {
       throw new ValidationError('Assignment organizationId must match class.organizationId.');
     }
-    const assignment = new Assignment(input);
+    if (input.courseId) {
+      const course = this.assertTenantRecord(this.courses, input.courseId, input.organizationId, 'course');
+      if (course.classId && course.classId !== input.classId) {
+        throw new ValidationError('Assignment course must belong to the selected class.');
+      }
+    }
+    const assignment = new Assignment({ ...input, status: input.status ?? 'draft', legacyRecipientScope: false });
     this.assignments.set(assignment.id, assignment);
     this.recordEvent('assignments.created', assignment, actorId);
     return assignment;
+  }
+
+  publishAssignment(assignmentId, actorId = null) {
+    const assignment = this.assignments.get(assignmentId);
+    if (!assignment) throw new ValidationError(`Unknown assignment: ${assignmentId}`);
+    if (!assignment.courseId) throw new ValidationError('courseId is required before publishing an assignment.');
+    if (assignment.status === 'published') return assignment;
+    const recipients = Array.from(this.enrollments.values())
+      .filter((enrollment) => enrollment.organizationId === assignment.organizationId
+        && enrollment.classId === assignment.classId
+        && enrollment.status === 'active'
+        && !enrollment.archivedAt)
+      .map((enrollment) => enrollment.learnerId);
+    if (recipients.length === 0) {
+      throw new ValidationError('The selected class has no active participants.');
+    }
+    assignment.recipientLearnerIds = [...new Set(recipients)];
+    assignment.status = 'published';
+    assignment.publishedAt = new Date().toISOString();
+    assignment.touch();
+    this.recordEvent('assignments.published', assignment, actorId, { recipientCount: assignment.recipientLearnerIds.length });
+    return assignment;
+  }
+
+  listVisibleAssignments({ organizationId, learnerId }) {
+    this.assertTenantRecord(this.learners, learnerId, organizationId, 'learner');
+    const activeClassIds = new Set(Array.from(this.enrollments.values())
+      .filter((enrollment) => enrollment.organizationId === organizationId
+        && enrollment.learnerId === learnerId
+        && enrollment.status === 'active'
+        && !enrollment.archivedAt)
+      .map((enrollment) => enrollment.classId));
+    const items = Array.from(this.assignments.values()).filter((assignment) =>
+      assignment.organizationId === organizationId
+      && assignment.status === 'published'
+      && activeClassIds.has(assignment.classId)
+      && (assignment.legacyRecipientScope || assignment.recipientLearnerIds.includes(learnerId))
+    );
+    return { items, page: { total: items.length, limit: items.length, offset: 0 } };
+  }
+
+  getAttendanceRoster({ organizationId, classId, courseId, date }) {
+    this.assertTenantRecord(this.classes, classId, organizationId, 'class');
+    const course = this.assertTenantRecord(this.courses, courseId, organizationId, 'course');
+    if (course.classId && course.classId !== classId) {
+      throw new ValidationError('Attendance course must belong to the selected class.');
+    }
+    if (!date || Number.isNaN(Date.parse(date))) throw new ValidationError('date must be valid.');
+    const participants = Array.from(this.enrollments.values())
+      .filter((enrollment) => enrollment.organizationId === organizationId
+        && enrollment.classId === classId
+        && enrollment.status === 'active'
+        && !enrollment.archivedAt)
+      .map((enrollment) => {
+        const learner = this.learners.get(enrollment.learnerId);
+        const person = this.people.get(enrollment.personId ?? learner?.personId);
+        const record = Array.from(this.attendance.values()).find((entry) =>
+          entry.organizationId === organizationId && entry.classId === classId
+          && entry.courseId === courseId && entry.date === date && entry.learnerId === enrollment.learnerId);
+        return {
+          learnerId: enrollment.learnerId,
+          personId: enrollment.personId ?? learner?.personId ?? null,
+          name: [person?.givenName, person?.familyName].filter(Boolean).join(' ') || learner?.learnerNumber || 'Participant',
+          status: record?.status ?? null,
+          recordId: record?.id ?? null
+        };
+      });
+    return { organizationId, classId, courseId, date, participants };
+  }
+
+  saveAttendanceRoster({ organizationId, classId, courseId, date, entries }, actorId = null) {
+    const roster = this.getAttendanceRoster({ organizationId, classId, courseId, date });
+    if (roster.participants.length === 0) throw new ValidationError('The selected class has no active participants.');
+    if (!Array.isArray(entries) || entries.length !== roster.participants.length) {
+      throw new ValidationError('One attendance status is required for every active participant.');
+    }
+    const allowed = new Set(['present', 'absent', 'late', 'excused', 'unexcused']);
+    const participantIds = new Set(roster.participants.map((participant) => participant.learnerId));
+    const seen = new Set();
+    for (const entry of entries) {
+      if (!participantIds.has(entry.learnerId) || seen.has(entry.learnerId)) {
+        throw new ValidationError('Attendance entries must match the active class roster exactly.');
+      }
+      seen.add(entry.learnerId);
+      if (!allowed.has(entry.status)) throw new ValidationError(`Unsupported attendance status: ${entry.status}`);
+    }
+    const records = entries.map((entry) => {
+      const existing = Array.from(this.attendance.values()).find((record) =>
+        record.organizationId === organizationId && record.classId === classId
+        && record.courseId === courseId && record.date === date && record.learnerId === entry.learnerId);
+      if (existing) {
+        existing.status = entry.status;
+        existing.touch();
+        this.recordEvent('attendance.updated', existing, actorId, { status: existing.status });
+        return existing;
+      }
+      return this.recordAttendance({ organizationId, classId, courseId, date, learnerId: entry.learnerId, status: entry.status }, actorId);
+    });
+    return { ...roster, participants: records };
   }
 
   submitAssignment(input, actorId = null) {

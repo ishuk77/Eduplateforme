@@ -31,6 +31,7 @@ import { registerInstitutionalRoutes } from './routes/institutional.js';
 import { registerLearningSystemRoutes } from './routes/learning-systems.js';
 import { registerOperationsRoutes } from './routes/operations.js';
 import { registerImportRoutes } from './routes/imports.js';
+import { registerDomainRoutes } from './routes/domains.js';
 import { modules, resolveModule } from '../modules.js';
 import { renderAppShell } from '../template.js';
 import { ApiError } from '../shared/errors.js';
@@ -242,6 +243,7 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
   registerLearningSystemRoutes(router, context);
   registerOperationsRoutes(router, context);
   registerImportRoutes(router, context);
+  registerDomainRoutes(router, context);
 
   return async function app(request) {
     let corsOrigin = null;
@@ -278,6 +280,11 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
         }), null);
       }
 
+      const configuredDomain = foundation.getCustomDomainForHost?.(url.hostname) ?? null;
+      if (configuredDomain && (configuredDomain.verificationState !== 'verified' || configuredDomain.accessState !== 'active')) {
+        throw new ApiError('DOMAIN_UNAVAILABLE', 'This institution domain is not active.', 403);
+      }
+
       enforceRateLimit(request, { namespace: 'api' });
       if (['/auth/login', '/auth/register', '/auth/refresh', '/auth/mfa/challenge', '/auth/mfa/confirm', '/auth/password/change-required'].includes(url.pathname)) {
         enforceRateLimit(request, {
@@ -303,10 +310,14 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
         ? resolveModule(url.pathname)
         : null;
       if (currentModule) {
+        const tenant = configuredDomain ?? foundation.resolveVerifiedTenantByHost?.(url.hostname) ?? null;
         const html = renderAppShell({ currentModule, modules, platform: foundation.describePlatform() });
         return withSecurityHeaders(new Response(html, {
           status: 200,
-          headers: { 'content-type': 'text/html; charset=utf-8' }
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            ...(tenant ? { 'x-eduplateforme-tenant': tenant.organizationId } : {})
+          }
         }), corsOrigin);
       }
 

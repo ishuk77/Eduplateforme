@@ -88,6 +88,7 @@ import {
   verifyTotp
 } from '../security/totp.js';
 import { executeBulkImport } from './bulk-import-service.js';
+import { domainVerificationInstructions, normalizeCustomDomain, verifyDomainTxt } from './custom-domain-service.js';
 import {
   assertEvidenceType,
   createAssetRecord,
@@ -123,8 +124,15 @@ const COLLECTIONS = {
   grades: { hydrate: (value) => new GradeEntry(value), repository: (connection) => new GradeRepository({ connection }), sensitive: true },
   attendance: { hydrate: (value) => new AttendanceRecord(value), repository: (connection) => new AttendanceRepository({ connection }) },
   scheduleEntries: { hydrate: (value) => new ScheduleEntry(value) },
-  assignments: { hydrate: (value) => new Assignment(value), repository: (connection) => new AssignmentRepository({ connection }) },
+  assignments: {
+    hydrate: (value) => new Assignment({
+      ...value,
+      legacyRecipientScope: value.legacyRecipientScope ?? !Object.hasOwn(value, 'recipientLearnerIds')
+    }),
+    repository: (connection) => new AssignmentRepository({ connection })
+  },
   assignmentSubmissions: { hydrate: (value) => new AssignmentSubmission(value) },
+  customDomains: { hydrate: (value) => new PlatformRecord(value) },
   reportCards: { hydrate: (value) => new ReportCard(value) },
   fees: { hydrate: (value) => new FeeConfiguration(value, { validate: false }) },
   invoices: { hydrate: (value) => new Invoice(value) },
@@ -227,6 +235,7 @@ const RESOURCE_TO_COLLECTION = {
   attendance: 'attendance',
   assignments: 'assignments',
   assignmentSubmissions: 'assignmentSubmissions',
+  customDomains: 'customDomains',
   scheduleEntries: 'scheduleEntries',
   notifications: 'notifications',
   virtualSchools: 'virtualSchools',
@@ -351,7 +360,7 @@ const TENANT_ADMIN_PERMISSIONS = Object.freeze([
 ]);
 
 const PREVIEW_ACCOUNT_ROLES = Object.freeze({
-  learner: Object.freeze(['assignments.read', 'lms.read']),
+  learner: Object.freeze(['assignments.read', 'grading.self', 'lms.read']),
   student: Object.freeze(['calendar.read', 'grading.read', 'lms.read']),
   teacher: Object.freeze([
     'assignments.read', 'assignments.write',
@@ -414,6 +423,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
   constructor(options = {}) {
     super(options);
     this.connection = options.connection ?? createDatabaseConnection({ url: options.databaseUrl });
+    this.domainVerifier = options.domainVerifier ?? verifyDomainTxt;
     this.repositories = Object.fromEntries(
       Object.entries(COLLECTIONS).map(([collectionKey, definition]) => {
         const repository = definition.repository?.(this.connection)
@@ -1666,6 +1676,166 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     return this.transactional(() => this.recordCreate('assignments', super.createAssignment(input, actorId), actorId, 'assignment.create'));
   }
 
+  publishAssignment(assignmentId, actorId = null) {
+    return this.transactional(() => {
+      const before = cloneRecord(this.assignments.get(assignmentId));
+      const assignment = super.publishAssignment(assignmentId, actorId);
+      if (before?.status !== 'published') {
+        this.recordUpdate('assignments', before, assignment, actorId, 'assignment.publish');
+      }
+      return assignment;
+    });
+  }
+
+  saveAttendanceRoster(input, actorId = null) {
+    return this.transactional(() => {
+      const beforeById = new Map(Array.from(this.attendance.values()).map((record) => [record.id, cloneRecord(record)]));
+      const result = super.saveAttendanceRoster(input, actorId);
+      for (const record of result.participants) {
+        const before = beforeById.get(record.id);
+        if (before) this.recordUpdate('attendance', before, record, actorId, 'attendance.roster-update');
+        else this.persistRecord('attendance', record, { actorId, action: 'attendance.roster-create' });
+      }
+      return result;
+    });
+  }
+
+  async configureCustomDomain(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const domain = normalizeCustomDomain(input.domain, process.env.RENDER_EXTERNAL_HOSTNAME);
+    const token = randomBytes(24).toString('base64url');
+    const record = new PlatformRecord({
+      id: createPermanentId('domain'),
+      organizationId: input.organizationId,
+      domain,
+      status: 'pending',
+      verificationState: 'pending',
+      verificationToken: token,
+      accessState: 'active',
+      problem: null,
+      verifiedAt: null,
+      instructions: domainVerificationInstructions(domain, token)
+    });
+    try {
+      return await this.transactional(() => {
+        const claim = this.connection.run(
+          'INSERT INTO custom_domain_claims(domain, entity_id, organization_id, created_at) VALUES (?, ?, ?, ?)',
+          [domain, record.id, record.organizationId, new Date().toISOString()]
+        );
+        const persist = () => {
+          this.customDomains.set(record.id, record);
+          const entityPersistence = this.persistRecord('customDomains', record, { actorId, action: 'custom-domain.configure' });
+          const audit = this.writeAuditEntry({
+            actorId, organizationId: record.organizationId, entityType: 'CustomDomain',
+            entityId: record.id, action: 'custom-domain.configure', after: { domain, verificationState: 'pending' }
+          });
+          return entityPersistence instanceof Promise || audit instanceof Promise
+            ? Promise.all([entityPersistence, audit]).then(() => record)
+            : record;
+        };
+        return claim instanceof Promise ? claim.then(persist) : persist();
+      });
+    } catch (error) {
+      if (/unique|duplicate/i.test(error.message)) {
+        throw new ValidationError('This domain is already associated with an institution.');
+      }
+      throw error;
+    }
+  }
+
+  listCustomDomains(organizationId) {
+    const items = Array.from(this.customDomains.values()).filter((entry) => entry.organizationId === organizationId && entry.status !== 'archived');
+    return { items, page: { total: items.length, limit: items.length, offset: 0 } };
+  }
+
+  async verifyCustomDomain(id, actorId = null) {
+    const record = this.customDomains.get(id);
+    if (!record) throw new ValidationError(`Unknown custom domain: ${id}`);
+    let verified = false;
+    try {
+      verified = await this.domainVerifier(record.domain, record.verificationToken);
+    } catch {
+      verified = false;
+    }
+    return this.transactional(() => {
+      const before = cloneRecord(record);
+      record.verificationState = verified ? 'verified' : 'failed';
+      record.verifiedAt = verified ? new Date().toISOString() : null;
+      record.problem = verified ? null : 'DNS TXT verification record was not found.';
+      record.touch();
+      return this.recordUpdate('customDomains', before, record, actorId, 'custom-domain.verify');
+    });
+  }
+
+  getCustomDomainForHost(host) {
+    let domain;
+    try {
+      domain = normalizeCustomDomain(host, null);
+    } catch {
+      return null;
+    }
+    return Array.from(this.customDomains.values()).find((entry) =>
+      entry.domain === domain && entry.status !== 'archived') ?? null;
+  }
+
+  resolveVerifiedTenantByHost(host) {
+    const entry = this.getCustomDomainForHost(host);
+    return entry?.verificationState === 'verified' && entry.accessState === 'active' ? entry : null;
+  }
+
+  listDomainGovernance() {
+    return {
+      domains: Array.from(this.customDomains.values()).map((entry) => ({
+        id: entry.id,
+        organizationId: entry.organizationId,
+        organizationName: this.organizations.get(entry.organizationId)?.displayName ?? null,
+        domain: entry.domain,
+        verificationState: entry.verificationState,
+        accessState: entry.accessState,
+        problem: entry.problem,
+        verifiedAt: entry.verifiedAt
+      })),
+      subscriptions: Array.from(this.platformSubscriptions.values()).map((entry) => ({
+        id: entry.id, organizationId: entry.organizationId, plan: entry.plan, status: entry.status,
+        startsOn: entry.startsOn, endsOn: entry.endsOn
+      }))
+    };
+  }
+
+  governCustomDomain(id, input, actorId = null) {
+    const record = this.customDomains.get(id);
+    if (!record) throw new ValidationError(`Unknown custom domain: ${id}`);
+    if (input.accessState != null && !['active', 'suspended'].includes(input.accessState)) {
+      throw new ValidationError('accessState must be active or suspended.');
+    }
+    if (input.verificationState != null && !['pending', 'verified', 'failed'].includes(input.verificationState)) {
+      throw new ValidationError('verificationState must be pending, verified, or failed.');
+    }
+    return this.transactional(() => {
+      const before = cloneRecord(record);
+      if (input.accessState != null) record.accessState = input.accessState;
+      if (input.verificationState != null) {
+        record.verificationState = input.verificationState;
+        record.verifiedAt = input.verificationState === 'verified' ? new Date().toISOString() : null;
+      }
+      if (Object.hasOwn(input, 'problem')) record.problem = input.problem == null ? null : String(input.problem).slice(0, 500);
+      record.touch();
+      return this.recordUpdate('customDomains', before, record, actorId, 'platform.custom-domain.govern');
+    });
+  }
+
+  governPlatformSubscription(id, input, actorId = null) {
+    const subscription = this.platformSubscriptions.get(id);
+    if (!subscription) throw new ValidationError(`Unknown subscription: ${id}`);
+    if (!['active', 'suspended', 'cancelled'].includes(input.status)) throw new ValidationError('status must be active, suspended, or cancelled.');
+    return this.transactional(() => {
+      const before = cloneRecord(subscription);
+      subscription.status = input.status;
+      subscription.touch();
+      return this.recordUpdate('platformSubscriptions', before, subscription, actorId, 'platform.subscription.govern');
+    });
+  }
+
   submitAssignment(input, actorId = null) {
     return this.transactional(() => this.recordCreate('assignmentSubmissions', super.submitAssignment(input, actorId), actorId, 'assignment-submission.create'));
   }
@@ -2580,6 +2750,10 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     if (resource === 'referenceEntries' && collection.get(id).standard) {
       throw new ValidationError('Standard reference entries are immutable.');
     }
+    if (resource === 'assignments' && ['status', 'publishedAt', 'recipientLearnerIds', 'legacyRecipientScope']
+      .some((field) => Object.hasOwn(patch, field))) {
+      throw new ValidationError('Assignment publication fields must be changed through the publish workflow.');
+    }
     if ([
       'operatingAuthorizations',
       'accreditations',
@@ -3144,6 +3318,12 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     const account = this.accounts.get(accountId);
     if (!account || !account.organizationIds.includes(organizationId)) {
       return { active: false, reason: 'not_enrolled', policy: null };
+    }
+    const subscriptions = [...this.platformSubscriptions.values()]
+      .filter((item) => item.organizationId === organizationId && item.status !== 'archived')
+      .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
+    if (subscriptions.length > 0 && subscriptions[0].status !== 'active') {
+      return { active: false, reason: 'subscription_suspended', policy: subscriptions[0].plan };
     }
     const learnerFacingRoles = new Set([
       'learner',

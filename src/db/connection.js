@@ -34,6 +34,7 @@ function createSqliteConnection(databaseUrl) {
   }
 
   const database = new DatabaseSync(filename);
+  let transactionDepth = 0;
   database.exec('PRAGMA foreign_keys = ON;');
   try {
     database.exec('PRAGMA journal_mode = WAL;');
@@ -58,7 +59,11 @@ function createSqliteConnection(databaseUrl) {
       return database.prepare(sql).run(...params);
     },
     transaction(callback) {
+      if (transactionDepth > 0) {
+        return callback();
+      }
       database.exec('BEGIN');
+      transactionDepth += 1;
       try {
         const result = callback();
         database.exec('COMMIT');
@@ -66,6 +71,8 @@ function createSqliteConnection(databaseUrl) {
       } catch (error) {
         database.exec('ROLLBACK');
         throw error;
+      } finally {
+        transactionDepth -= 1;
       }
     },
     ping() {
@@ -158,6 +165,9 @@ export async function createPostgresConnection(databaseUrl, options = {}) {
       return schedule((client) => client.query(convertPlaceholders(sql), params));
     },
     async transaction(callback) {
+      if (transactionStorage.getStore()) {
+        return callback();
+      }
       const client = await pool.connect();
       try {
         await client.query('BEGIN');

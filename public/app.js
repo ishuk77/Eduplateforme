@@ -317,8 +317,9 @@ const modules = [
       {
         id: 'assignments', title: 'Devoirs', path: '/assignments',
         read: 'assignments.read', write: 'assignments.write',
-        fields: [['classId', 'Classe', 'reference', true, '/academics/classes', 'name'], ['title', 'Titre', 'text', true], ['type', 'Type', 'select', true, ['homework', 'exercise', 'quiz', 'exam']], ['dueAt', 'Échéance', 'datetime-local', true]],
-        columns: ['title', 'type', 'classId', 'dueAt']
+        fields: [['classId', 'Classe/groupe', 'reference', true, '/academics/classes', 'name'], ['courseId', 'Cours', 'reference', true, '/academics/courses', 'name'], ['title', 'Titre', 'text', true], ['type', 'Type', 'select', true, ['homework', 'exercise', 'quiz', 'exam']], ['dueAt', 'Échéance', 'datetime-local', true]],
+        columns: ['title', 'type', 'classId', 'courseId', 'dueAt', 'status'],
+        action: { label: 'Publier à la classe', path: '/assignments/:id/publish', fields: [] }
       },
       {
         id: 'assignmentSubmissions', title: 'Soumissions', path: '/assignments/submissions',
@@ -370,8 +371,9 @@ const modules = [
     resources: [{
       id: 'attendance', title: 'Registre de présence', path: '/attendance/records',
       read: 'attendance.read', write: 'attendance.write',
-      fields: [['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['classId', 'Classe', 'reference', true, '/academics/classes', 'name'], ['date', 'Date', 'date', true], ['status', 'Statut', 'select', true, ['present', 'absent', 'late', 'excused', 'unexcused']]],
-      columns: ['date', 'learnerId', 'classId', 'status'],
+      create: false,
+      fields: [],
+      columns: ['date', 'learnerId', 'classId', 'courseId', 'status'],
       summary: (items) => {
         const present = items.filter((item) => !['absent', 'unexcused'].includes(item.status)).length;
         return `Taux d’assiduité global : ${items.length ? ((present / items.length) * 100).toFixed(1) : '0.0'} %`;
@@ -976,12 +978,6 @@ function landing() {
           <p class="section-label">Gestion scolaire multi-établissement</p>
           <h1>Une école organisée, des données utiles, des actions traçables.</h1>
           <p>Eduplateforme réunit inscriptions, personnes, calendrier, communications, bulletins, documents et gouvernance dans un espace sécurisé.</p>
-          <div class="hero-actions">
-            <a class="primary-button" href="/register">Créer mon compte administrateur</a>
-            <a class="secondary-button" href="/login">J’ai déjà un compte</a>
-            <a class="secondary-button" href="/verify-institution">Vérifier une institution</a>
-            <a class="secondary-button" href="/verify-credential">Vérifier un diplôme</a>
-          </div>
         </div>
         <div class="landing-panel surface-card">
           <p class="section-label">MVP testable</p>
@@ -1238,9 +1234,112 @@ async function modulePage(module) {
           <details><summary>Escalade</summary><p>L1 traite l’usage, L2 la configuration, L3 l’application et L4 les fournisseurs.</p></details>
         </section>`;
     }
+    if (module.id === 'organizations' && can('organizations.read')) {
+      const domains = await apiRequest(`/domains?organizationId=${encodeURIComponent(state.user.organizationId)}`);
+      supplement += `
+        <section class="surface-card resource-section">
+          <p class="section-label">Site institutionnel</p><h2>Domaine personnalisé</h2>
+          <p>Associez un domaine dont vous contrôlez le DNS. Les données restent dans la base centrale isolée par institution. Le routage TLS exige aussi l’ajout manuel du domaine dans Render.</p>
+          ${can('organizations.write') ? `<form id="domain-form" class="form-grid"><label class="form-wide">Domaine ou URL du site<input name="domain" required placeholder="campus.example.edu"></label><button class="primary-button" type="submit">Préparer la vérification DNS</button></form>` : ''}
+          <div class="data-grid">${domains.items.map((domain) => `<article class="data-card"><h3>${escapeHtml(domain.domain)}</h3><p>Vérification : <strong>${escapeHtml(domain.verificationState)}</strong> · Accès : <strong>${escapeHtml(domain.accessState)}</strong></p><p><code>${escapeHtml(domain.instructions?.recordType)} ${escapeHtml(domain.instructions?.name)} = ${escapeHtml(domain.instructions?.value)}</code></p><p>${escapeHtml(domain.instructions?.note)}</p>${can('organizations.write') ? `<button class="secondary-button" type="button" data-domain-verify="${escapeHtml(domain.id)}">Vérifier maintenant</button>` : ''}</article>`).join('') || '<p class="empty-state">Aucun domaine configuré.</p>'}</div>
+        </section>`;
+    }
+    if (module.id === 'attendance' && can('attendance.write')) {
+      const [classResponse, courses] = await Promise.all([
+        apiRequest('/academics/classes?limit=200').catch(() => ({ items: [] })),
+        apiRequest('/academics/courses?limit=200').catch(() => ({ items: [] }))
+      ]);
+      const classes = classResponse.items;
+      supplement = `
+        <section class="surface-card resource-section">
+          <p class="section-label">Appel de classe</p><h2>Charger la liste des participants</h2>
+          <form id="attendance-roster-form" class="form-grid">
+            <label>Classe<select name="classId" required><option value="">Choisir</option>${classes.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name || item.code)}</option>`).join('')}</select></label>
+            <label>Cours<select name="courseId" required><option value="">Choisir</option>${courses.items.map((item) => `<option value="${escapeHtml(item.id)}" data-class-id="${escapeHtml(item.classId ?? '')}">${escapeHtml(item.name || item.code)}</option>`).join('')}</select></label>
+            <label>Date/session<input name="date" type="date" required></label>
+            <button class="primary-button" type="submit">Charger la liste</button>
+          </form>
+          <div id="attendance-roster" aria-live="polite"></div>
+        </section>`;
+    }
+    if (module.id === 'operations' && can('operations.read')) {
+      const governance = await apiRequest('/platform/governance/domains').catch(() => null);
+      if (governance) {
+        supplement += `<section class="surface-card resource-section"><p class="section-label">Gouvernance plateforme</p><h2>Domaines et accès abonnements</h2><p>Vue limitée aux métadonnées de configuration; aucune donnée privée tenant n’est exposée.</p><div class="table-scroll"><table><thead><tr><th>Institution</th><th>Domaine</th><th>Vérification</th><th>Accès</th><th>Actions auditées</th></tr></thead><tbody>${governance.domains.map((domain) => `<tr><td>${escapeHtml(domain.organizationName || domain.organizationId)}</td><td>${escapeHtml(domain.domain)}</td><td>${escapeHtml(domain.verificationState)}</td><td>${escapeHtml(domain.accessState)}</td><td><button type="button" class="secondary-button" data-domain-govern="${escapeHtml(domain.id)}" data-next-state="${domain.accessState === 'active' ? 'suspended' : 'active'}">${domain.accessState === 'active' ? 'Suspendre' : 'Réactiver'}</button> <button type="button" class="secondary-button" data-domain-repair="${escapeHtml(domain.id)}">Marquer réparé</button></td></tr>`).join('') || '<tr><td colspan="5">Aucun domaine.</td></tr>'}</tbody></table></div><h3>Abonnements</h3><div class="table-scroll"><table><thead><tr><th>Institution</th><th>Plan</th><th>État</th><th>Action auditée</th></tr></thead><tbody>${governance.subscriptions.map((subscription) => `<tr><td>${escapeHtml(subscription.organizationId)}</td><td>${escapeHtml(subscription.plan)}</td><td>${escapeHtml(subscription.status)}</td><td><button type="button" class="secondary-button" data-subscription-govern="${escapeHtml(subscription.id)}" data-next-state="${subscription.status === 'active' ? 'suspended' : 'active'}">${subscription.status === 'active' ? 'Suspendre' : 'Réactiver'}</button></td></tr>`).join('') || '<tr><td colspan="4">Aucun abonnement.</td></tr>'}</tbody></table></div></section>`;
+      }
+    }
     app.innerHTML = shell(`<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">${moduleLabel(module, 1)}</p><h1>${moduleLabel(module)}</h1><p>${module.description}</p><a class="help-link" href="/help#${module.id}">Ouvrir le guide de ce module</a></section>${supplement}${module.resources.map(resourceSection).join('')}</main>`, module.id);
     bindShell();
     bindResources(module);
+    document.querySelector('#domain-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await apiRequest('/domains', { method: 'POST', body: JSON.stringify({ ...Object.fromEntries(new FormData(event.currentTarget)), organizationId: state.user.organizationId }) });
+        await modulePage(module);
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    });
+    document.querySelectorAll('[data-domain-verify]').forEach((button) => button.addEventListener('click', async () => {
+      try {
+        await apiRequest(`/domains/${button.dataset.domainVerify}/verify`, { method: 'POST', body: '{}' });
+        await modulePage(module);
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    }));
+    document.querySelectorAll('[data-domain-govern]').forEach((button) => button.addEventListener('click', async () => {
+      try {
+        await apiRequest(`/platform/governance/domains/${button.dataset.domainGovern}`, { method: 'PUT', body: JSON.stringify({ accessState: button.dataset.nextState }) });
+        await modulePage(module);
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    }));
+    document.querySelectorAll('[data-domain-repair]').forEach((button) => button.addEventListener('click', async () => {
+      try {
+        await apiRequest(`/platform/governance/domains/${button.dataset.domainRepair}`, { method: 'PUT', body: JSON.stringify({ accessState: 'active', problem: null }) });
+        await modulePage(module);
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    }));
+    document.querySelectorAll('[data-subscription-govern]').forEach((button) => button.addEventListener('click', async () => {
+      try {
+        await apiRequest(`/platform/governance/subscriptions/${button.dataset.subscriptionGovern}`, { method: 'PUT', body: JSON.stringify({ status: button.dataset.nextState }) });
+        await modulePage(module);
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    }));
+    document.querySelector('#attendance-roster-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(event.currentTarget));
+      const region = document.querySelector('#attendance-roster');
+      region.innerHTML = `<p class="loading-card">${t('loading')}</p>`;
+      try {
+        const roster = await apiRequest(`/attendance/roster?organizationId=${encodeURIComponent(state.user.organizationId)}&classId=${encodeURIComponent(values.classId)}&courseId=${encodeURIComponent(values.courseId)}&date=${encodeURIComponent(values.date)}`);
+        if (!roster.participants.length) {
+          region.innerHTML = '<p class="empty-state">Aucun participant actif dans cette classe.</p>';
+          return;
+        }
+        const statuses = [['present', 'Présent'], ['absent', 'Absent'], ['late', 'En retard'], ['excused', 'Excusé'], ['unexcused', 'Non excusé']];
+        region.innerHTML = `<form id="attendance-save-form"><input type="hidden" name="classId" value="${escapeHtml(values.classId)}"><input type="hidden" name="courseId" value="${escapeHtml(values.courseId)}"><input type="hidden" name="date" value="${escapeHtml(values.date)}"><div class="table-scroll"><table><thead><tr><th>Participant</th>${statuses.map(([, label]) => `<th>${label}</th>`).join('')}</tr></thead><tbody>${roster.participants.map((participant) => `<tr><th scope="row">${escapeHtml(participant.name)}</th>${statuses.map(([status, label]) => `<td><label class="status-choice"><input type="radio" name="status-${escapeHtml(participant.learnerId)}" value="${status}" ${participant.status === status || (!participant.status && status === 'present') ? 'checked' : ''}><span class="sr-only">${label} — ${escapeHtml(participant.name)}</span></label></td>`).join('')}</tr>`).join('')}</tbody></table></div><button class="primary-button" type="submit">Enregistrer l’appel</button></form>`;
+        document.querySelector('#attendance-save-form').addEventListener('submit', async (saveEvent) => {
+          saveEvent.preventDefault();
+          const form = saveEvent.currentTarget;
+          const entries = roster.participants.map((participant) => ({ learnerId: participant.learnerId, status: new FormData(form).get(`status-${participant.learnerId}`) }));
+          try {
+            await apiRequest('/attendance/roster', { method: 'PUT', body: JSON.stringify({ ...values, organizationId: state.user.organizationId, entries }) });
+            notification('Appel enregistré.');
+          } catch (error) {
+            notification(error.message, 'error');
+          }
+        });
+      } catch (error) {
+        region.innerHTML = `<p class="feedback feedback--error">${escapeHtml(error.message)}</p>`;
+      }
+    });
     document.querySelectorAll('[data-analytics-export]').forEach((button) => {
       button.addEventListener('click', async () => {
         button.disabled = true;
@@ -1263,6 +1362,10 @@ async function dashboard() {
   bindShell();
   try {
     const roleDashboard = await apiRequest('/dashboards/me');
+    const learnerRoles = new Set(['learner', 'student', 'apprenant', 'university-student', 'etudiant-universitaire']);
+    const gradebook = (can('grading.read') || can('grading.self')) && learnerRoles.has(roleDashboard.role)
+      ? await apiRequest('/grading/me').catch(() => null)
+      : null;
     const labels = {
       headcount: 'Effectifs', enrollments: 'Inscriptions', attendanceRate: 'Assiduité',
       resultAverage: 'Résultats', progressionAverage: 'Progression',
@@ -1276,6 +1379,7 @@ async function dashboard() {
         <section class="page-heading"><p class="section-label">Pilotage · ${escapeHtml(roleDashboard.experienceRole ?? roleDashboard.role)}</p><h1>Tableau de bord</h1><p>Chaque carte dépend du rôle, des permissions et des données réellement disponibles.</p></section>
         ${pendingPayment ? `<section class="surface-card resource-section" role="status"><p class="section-label">Accès en attente</p><h2>Paiement à régulariser</h2><p>Votre tableau de bord est actif, mais les données académiques et contenus d’apprentissage restent masqués jusqu’à satisfaction de la politique <strong>${escapeHtml(roleDashboard.academicAccess.policy)}</strong>. Contactez l’administration; aucune note, présence ou progression n’est affichée ici.</p></section>` : ''}
         <section class="metric-grid">${roleDashboard.cards.map(({ metric, value }) => `<article class="metric-card surface-card"><span>${labels[metric] ?? metric}</span><strong>${value ?? '—'}</strong><small>${value == null ? 'Non disponible ou masqué' : 'Donnée tenant calculée'}</small></article>`).join('') || '<p class="empty-state">Aucun indicateur autorisé.</p>'}</section>
+        ${gradebook ? `<section class="surface-card resource-section"><p class="section-label">Résultats personnels</p><h2>Notes par matière</h2>${gradebook.courses.length ? gradebook.courses.map((course) => `<details class="grade-course"><summary><strong>${escapeHtml(course.subjectName || course.courseName || 'Matière')}</strong><span>Moyenne pondérée : ${formatValue(course.summary.averageOn20)} / 20</span></summary><div class="table-scroll"><table><thead><tr><th>Évaluation</th><th>Coefficient</th><th>Note</th><th>Barème</th><th>Date</th><th>Résultat pondéré</th></tr></thead><tbody>${course.assessments.map((assessment) => `<tr><td>${escapeHtml(assessment.title)}</td><td>${formatValue(assessment.coefficient)}</td><td>${formatValue(assessment.score)}</td><td>${formatValue(assessment.maxScore)}</td><td>${formatValue(assessment.date)}</td><td>${formatValue(assessment.weightedResult)}</td></tr>`).join('')}</tbody></table></div></details>`).join('') : '<p class="empty-state">Aucune note disponible.</p>'}</section>` : ''}
         <section class="surface-card quick-start"><h2>Prochaines actions</h2><div class="action-grid">${roleDashboard.nextSteps.map((step) => `<a class="secondary-button" href="${escapeHtml(step.path)}">${escapeHtml(step.label)}</a>`).join('') || '<p>Aucune action supplémentaire autorisée.</p>'}</div></section>
         <section class="surface-card quick-start"><h2>Espaces autorisés</h2><p>${roleDashboard.availableModules.map(escapeHtml).join(' · ') || 'Aucun module opérationnel supplémentaire.'}</p></section>
       </main>`);
