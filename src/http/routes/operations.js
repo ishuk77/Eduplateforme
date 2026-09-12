@@ -175,6 +175,15 @@ export function registerOperationsRoutes(router, { service }) {
           prerequisites: ['Permission explicite'],
           workflow: ['Contrôler les événements', 'Suivre qualité et incidents', 'Vérifier sauvegardes et conformité'],
           actions: ['Consulter les traces', 'Ouvrir un ticket', 'Demander une opération externe']
+        },
+        {
+          id: 'domainReseller',
+          title: 'Abonnements, domaines et droits du titulaire',
+          audience: ['platform-admin', 'school-admin', 'university-admin', 'training-center-admin'],
+          permissions: ['saas.read', 'saas.write'],
+          prerequisites: ['Organisation active', 'Catalogue TLD activé', 'Coordonnées et consentement du titulaire'],
+          workflow: ['Choisir Essential, Professional ou Premium', 'Lire les lignes SaaS et domaine séparément', 'Demander un devis de disponibilité', 'Confirmer le titulaire institutionnel', 'Attendre le paiement authentifié puis le DNS et le TLS'],
+          actions: ['Désactiver le renouvellement automatique', 'Demander un transfert sans perdre la propriété', 'Diagnostiquer DNS/TLS', 'Escalader un échec sans simuler une inscription']
         }
       ],
       faq: [
@@ -188,6 +197,9 @@ export function registerOperationsRoutes(router, { service }) {
         ,
         { question: 'Comment relier le domaine de mon institution ?', answer: 'Ajoutez le domaine dans Organisations, publiez le TXT indiqué, lancez la vérification puis configurez séparément le domaine personnalisé et TLS dans Render. Cette association ne déplace pas la base de données et ne modifie pas un site tiers.' },
         { question: 'Comment publier un devoir ou faire l’appel ?', answer: 'Choisissez toujours une classe et un cours. La publication détermine côté serveur les inscrits actifs; l’appel charge ensuite la liste complète et exige un seul statut par participant.' }
+        ,
+        { question: 'Un domaine affiché comme commandé est-il déjà acheté ?', answer: 'Non. Une commande reste en attente de paiement puis d’inscription. Seule une référence retournée par le registrar après paiement authentifié prouve la soumission; le mode manuel ou désactivé ne simule jamais un achat.' },
+        { question: 'Qui possède le domaine et que se passe-t-il après résiliation ?', answer: 'L’institution est le titulaire. Eduplateforme agit comme revendeur et gestionnaire technique. La résiliation ne supprime ni le droit au transfert ni la période de grâce des données; le prix annuel de renouvellement reste une ligne distincte.' }
       ],
       localeCoverage: {
         supported: ['fr', 'en', 'es', 'pt', 'ar'],

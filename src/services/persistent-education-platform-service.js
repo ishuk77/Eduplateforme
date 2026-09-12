@@ -89,6 +89,7 @@ import {
 } from '../security/totp.js';
 import { executeBulkImport } from './bulk-import-service.js';
 import { domainVerificationInstructions, normalizeCustomDomain, verifyDomainTxt } from './custom-domain-service.js';
+import { createDomainProvider } from './domain-provider.js';
 import {
   assertEvidenceType,
   createAssetRecord,
@@ -133,6 +134,10 @@ const COLLECTIONS = {
   },
   assignmentSubmissions: { hydrate: (value) => new AssignmentSubmission(value) },
   customDomains: { hydrate: (value) => new PlatformRecord(value) },
+  domainTldCatalog: { hydrate: (value) => new PlatformRecord(value) },
+  domainQuotes: { hydrate: (value) => new PlatformRecord(value) },
+  domainOrders: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  domainLifecycleEvents: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
   reportCards: { hydrate: (value) => new ReportCard(value) },
   fees: { hydrate: (value) => new FeeConfiguration(value, { validate: false }) },
   invoices: { hydrate: (value) => new Invoice(value) },
@@ -236,6 +241,10 @@ const RESOURCE_TO_COLLECTION = {
   assignments: 'assignments',
   assignmentSubmissions: 'assignmentSubmissions',
   customDomains: 'customDomains',
+  domainTldCatalog: 'domainTldCatalog',
+  domainQuotes: 'domainQuotes',
+  domainOrders: 'domainOrders',
+  domainLifecycleEvents: 'domainLifecycleEvents',
   scheduleEntries: 'scheduleEntries',
   notifications: 'notifications',
   virtualSchools: 'virtualSchools',
@@ -424,6 +433,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     super(options);
     this.connection = options.connection ?? createDatabaseConnection({ url: options.databaseUrl });
     this.domainVerifier = options.domainVerifier ?? verifyDomainTxt;
+    this.domainProvider = options.domainProvider ?? createDomainProvider(options);
     this.repositories = Object.fromEntries(
       Object.entries(COLLECTIONS).map(([collectionKey, definition]) => {
         const repository = definition.repository?.(this.connection)
@@ -1834,6 +1844,360 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       subscription.touch();
       return this.recordUpdate('platformSubscriptions', before, subscription, actorId, 'platform.subscription.govern');
     });
+  }
+
+  getDomainProviderStatus() {
+    const threshold = Number(process.env.DOMAIN_PROVIDER_LOW_BALANCE_THRESHOLD ?? 100);
+    const status = this.domainProvider.status();
+    return {
+      ...status,
+      lowBalanceThreshold: threshold,
+      lowBalance: status.balance?.amount != null && Number(status.balance.amount) < threshold,
+      livePurchasingEnabled: status.provider === 'openprovider' && status.available === true
+    };
+  }
+
+  upsertDomainTld(input, actorId = null) {
+    const tld = String(input.tld ?? '').trim().toLowerCase().replace(/^\./, '');
+    if (!/^[a-z0-9-]{2,63}$/.test(tld)) throw new ValidationError('tld must be a valid extension.');
+    const currency = String(input.currency ?? 'USD').toUpperCase();
+    const prices = ['wholesaleCost', 'salePrice', 'registrationPrice', 'renewalPrice', 'transferPrice'];
+    for (const field of prices) {
+      if (!Number.isFinite(Number(input[field])) || Number(input[field]) < 0) {
+        throw new ValidationError(`${field} must be a non-negative number.`);
+      }
+    }
+    const existing = [...this.domainTldCatalog.values()].find((entry) => entry.tld === tld);
+    const record = new PlatformRecord({
+      ...(existing ?? {}),
+      id: existing?.id ?? createPermanentId('tld'),
+      organizationId: null,
+      tld,
+      enabled: input.enabled !== false,
+      currency,
+      wholesaleCost: Number(input.wholesaleCost),
+      salePrice: Number(input.salePrice),
+      registrationPrice: Number(input.registrationPrice),
+      renewalPrice: Number(input.renewalPrice),
+      transferPrice: Number(input.transferPrice),
+      margin: Number(input.salePrice) - Number(input.wholesaleCost),
+      effectiveFrom: input.effectiveFrom ?? new Date().toISOString().slice(0, 10),
+      effectiveUntil: input.effectiveUntil ?? null
+    });
+    return this.transactional(() => existing
+      ? this.recordUpdate('domainTldCatalog', cloneRecord(existing), record, actorId, 'domain.catalog.update')
+      : this.recordCreate('domainTldCatalog', record, actorId, 'domain.catalog.create'));
+  }
+
+  listDomainTldCatalog({ enabledOnly = false } = {}) {
+    const items = [...this.domainTldCatalog.values()]
+      .filter((entry) => entry.status !== 'archived' && (!enabledOnly || entry.enabled))
+      .sort((left, right) => left.tld.localeCompare(right.tld));
+    return { items, page: { total: items.length, limit: items.length, offset: 0 } };
+  }
+
+  async quoteDomain(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const domain = normalizeCustomDomain(input.domain, process.env.RENDER_EXTERNAL_HOSTNAME);
+    const idempotencyKey = String(input.idempotencyKey ?? '').trim();
+    if (!idempotencyKey) throw new ValidationError('idempotencyKey is required.');
+    const duplicate = [...this.domainQuotes.values()].find((entry) =>
+      entry.organizationId === input.organizationId && entry.idempotencyKey === idempotencyKey);
+    if (duplicate) return duplicate;
+    const tld = domain.split('.').at(-1);
+    const catalog = [...this.domainTldCatalog.values()].find((entry) =>
+      entry.tld === tld && entry.enabled && entry.status !== 'archived');
+    if (!catalog) throw new ValidationError(`Registration is not enabled for .${tld}.`);
+    const providerQuote = await this.domainProvider.quote(domain);
+    const record = new PlatformRecord({
+      id: createPermanentId('domain-quote'),
+      organizationId: input.organizationId,
+      idempotencyKey,
+      domain,
+      available: providerQuote.available === true,
+      provider: this.domainProvider.code,
+      providerReference: providerQuote.providerReference ?? null,
+      currency: catalog.currency,
+      registrationPrice: catalog.registrationPrice,
+      renewalPrice: catalog.renewalPrice,
+      transferPrice: catalog.transferPrice,
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString()
+    });
+    return this.transactional(() =>
+      this.recordCreate('domainQuotes', record, actorId, 'domain.quote.create'));
+  }
+
+  createDomainOrder(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const idempotencyKey = String(input.idempotencyKey ?? '').trim();
+    if (!idempotencyKey) throw new ValidationError('idempotencyKey is required.');
+    const duplicate = [...this.domainOrders.values()].find((entry) =>
+      entry.organizationId === input.organizationId && entry.idempotencyKey === idempotencyKey);
+    if (duplicate) return duplicate;
+    const quote = this.domainQuotes.get(input.quoteId);
+    if (!quote || quote.organizationId !== input.organizationId) {
+      throw new ValidationError('A tenant-scoped domain quote is required.');
+    }
+    if (!quote.available) throw new ValidationError('The quoted domain is unavailable.');
+    if (new Date(quote.expiresAt).getTime() <= Date.now()) throw new ValidationError('The domain quote has expired.');
+    const registrant = input.registrant;
+    if (!registrant || !registrant.name || !registrant.email || !registrant.countryCode) {
+      throw new ValidationError('Registrant name, email, and countryCode are required.');
+    }
+    if (input.registrantConsent !== true) throw new ValidationError('Registrant consent is required.');
+    const billingCycle = input.billingCycle === 'annual' ? 'annual' : 'monthly';
+    const subscriptionAmount = Number(input.subscriptionAmount);
+    if (!Number.isFinite(subscriptionAmount) || subscriptionAmount < 0) {
+      throw new ValidationError('subscriptionAmount must be a non-negative number.');
+    }
+    const record = new PlatformRecord({
+      id: createPermanentId('domain-order'),
+      organizationId: input.organizationId,
+      idempotencyKey,
+      quoteId: quote.id,
+      domain: quote.domain,
+      orderType: input.orderType ?? 'registration',
+      plan: input.plan ?? 'premium',
+      billingCycle,
+      registrant: {
+        name: String(registrant.name).slice(0, 200),
+        email: String(registrant.email).slice(0, 254),
+        countryCode: String(registrant.countryCode).toUpperCase(),
+        organization: String(registrant.organization ?? '').slice(0, 200)
+      },
+      registrantConsentAt: new Date().toISOString(),
+      sponsoringRegistrar: this.domainProvider.code === 'openprovider' ? 'Openprovider' : 'Not assigned (manual/disabled mode)',
+      ownership: 'Institution is registrant/owner; Eduplateforme acts only as reseller and technical manager.',
+      lineItems: [
+        {
+          type: 'saas_subscription',
+          description: `${input.plan ?? 'premium'} SaaS subscription (${billingCycle})`,
+          billingCycle,
+          amount: subscriptionAmount,
+          currency: quote.currency
+        },
+        {
+          type: 'domain_registration',
+          description: `${quote.domain} registration (annual)`,
+          billingCycle: 'annual',
+          amount: quote.registrationPrice,
+          renewalAmount: quote.renewalPrice,
+          currency: quote.currency,
+          promotionAmount: Number(input.firstYearPromotionAmount ?? 0)
+        }
+      ],
+      paymentState: 'pending',
+      refundState: 'not_requested',
+      lifecycleState: 'pending_payment',
+      timelineState: 'payment_pending',
+      providerReference: null,
+      lastError: null,
+      registrationDate: null,
+      expiryDate: null,
+      autoRenew: input.autoRenew !== false,
+      dnsState: 'pending',
+      tlsState: 'pending',
+      noticesSent: []
+    });
+    return this.transactional(() =>
+      this.recordCreate('domainOrders', record, actorId, 'domain.order.create'));
+  }
+
+  listDomainOrders(organizationId = null, { includeRegistrant = false } = {}) {
+    const items = [...this.domainOrders.values()]
+      .filter((entry) => entry.status !== 'archived' && (!organizationId || entry.organizationId === organizationId))
+      .map((entry) => ({
+        ...entry,
+        registrant: includeRegistrant ? entry.registrant : undefined,
+        transferAuthCodeHash: undefined
+      }));
+    return { items, page: { total: items.length, limit: items.length, offset: 0 } };
+  }
+
+  markDomainOrderPaid(id, input, actorId = null) {
+    const order = this.domainOrders.get(id);
+    if (!order) throw new ValidationError(`Unknown domain order: ${id}`);
+    if (input.confirmed !== true || !String(input.reason ?? '').trim()) {
+      throw new ValidationError('Manual payment confirmation and reason are required.');
+    }
+    if (order.paymentState === 'paid') return order;
+    return this.transactional(() => {
+      const before = cloneRecord(order);
+      order.paymentState = 'paid';
+      order.lifecycleState = 'pending_registration';
+      order.timelineState = 'domain_pending';
+      order.paymentConfirmedAt = new Date().toISOString();
+      order.paymentConfirmationReason = String(input.reason).slice(0, 500);
+      order.touch();
+      return this.recordUpdate('domainOrders', before, order, actorId, 'domain.payment.confirm');
+    });
+  }
+
+  async submitDomainRegistration(id, actorId = null) {
+    const order = this.domainOrders.get(id);
+    if (!order) throw new ValidationError(`Unknown domain order: ${id}`);
+    if (order.paymentState !== 'paid') throw new ValidationError('A domain order cannot be registered before authenticated payment confirmation.');
+    if (order.providerReference) return order;
+    let result;
+    try {
+      result = await this.domainProvider.register({
+        domain: order.domain,
+        registrant: order.registrant,
+        period: 1,
+        idempotencyKey: order.id
+      });
+    } catch (error) {
+      await this.transactional(() => {
+        const before = cloneRecord(order);
+        order.lastError = error.message;
+        order.touch();
+        return this.recordUpdate('domainOrders', before, order, actorId, 'domain.registration.failed');
+      });
+      throw error;
+    }
+    return this.transactional(() => {
+      const before = cloneRecord(order);
+      order.providerReference = result.providerReference ?? result.id ?? null;
+      order.registrationDate = result.registrationDate ?? new Date().toISOString().slice(0, 10);
+      order.expiryDate = result.expiryDate ?? null;
+      order.lifecycleState = 'pending_dns';
+      order.timelineState = 'dns_pending';
+      order.lastError = null;
+      order.touch();
+      return this.recordUpdate('domainOrders', before, order, actorId, 'domain.registration.submitted');
+    });
+  }
+
+  updateDomainProvisioning(id, input, actorId = null) {
+    const order = this.domainOrders.get(id);
+    if (!order) throw new ValidationError(`Unknown domain order: ${id}`);
+    const dnsState = input.dnsState ?? order.dnsState;
+    const tlsState = input.tlsState ?? order.tlsState;
+    if (!['pending', 'verified', 'failed'].includes(dnsState) || !['pending', 'provisioning', 'active', 'failed'].includes(tlsState)) {
+      throw new ValidationError('Invalid DNS or TLS state.');
+    }
+    return this.transactional(() => {
+      const before = cloneRecord(order);
+      order.dnsState = dnsState;
+      order.tlsState = tlsState;
+      order.diagnostic = input.diagnostic == null ? order.diagnostic : String(input.diagnostic).slice(0, 500);
+      if (dnsState === 'verified' && tlsState === 'active') {
+        order.lifecycleState = 'active';
+        order.timelineState = 'active';
+      } else if (dnsState === 'verified') {
+        order.lifecycleState = 'pending_tls';
+        order.timelineState = 'tls_pending';
+      } else {
+        order.lifecycleState = 'pending_dns';
+        order.timelineState = 'dns_pending';
+      }
+      order.touch();
+      return this.recordUpdate('domainOrders', before, order, actorId, 'domain.provisioning.update');
+    });
+  }
+
+  setDomainAutoRenew(id, enabled, actorId = null) {
+    const order = this.domainOrders.get(id);
+    if (!order) throw new ValidationError(`Unknown domain order: ${id}`);
+    return this.transactional(() => {
+      const before = cloneRecord(order);
+      order.autoRenew = enabled === true;
+      order.touch();
+      return this.recordUpdate('domainOrders', before, order, actorId, 'domain.auto-renew.update');
+    });
+  }
+
+  requestDomainRenewal(id, input, actorId = null) {
+    const order = this.domainOrders.get(id);
+    if (!order) throw new ValidationError(`Unknown domain order: ${id}`);
+    const idempotencyKey = String(input.idempotencyKey ?? '').trim();
+    if (!idempotencyKey) throw new ValidationError('idempotencyKey is required.');
+    if (order.renewalIdempotencyKeys?.includes(idempotencyKey)) return order;
+    return this.transactional(() => {
+      const before = cloneRecord(order);
+      order.renewalPaymentState = 'pending';
+      order.renewalRequestedAt = new Date().toISOString();
+      order.renewalPrice = order.lineItems.find((line) => line.type === 'domain_registration')?.renewalAmount ?? null;
+      order.renewalIdempotencyKeys = [...(order.renewalIdempotencyKeys ?? []), idempotencyKey];
+      order.touch();
+      return this.recordUpdate('domainOrders', before, order, actorId, 'domain.renewal.request');
+    });
+  }
+
+  cancelDomainManagement(id, input, actorId = null) {
+    const order = this.domainOrders.get(id);
+    if (!order) throw new ValidationError(`Unknown domain order: ${id}`);
+    if (input.confirmation !== order.domain || !String(input.reason ?? '').trim()) {
+      throw new ValidationError('Cancellation requires the exact domain and a reason.');
+    }
+    return this.transactional(() => {
+      const before = cloneRecord(order);
+      order.autoRenew = false;
+      order.managementCancelledAt = new Date().toISOString();
+      order.managementCancellationReason = String(input.reason).slice(0, 500);
+      order.transferRightsPreserved = true;
+      order.dataGraceUntil = new Date(Date.now() + 30 * 86_400_000).toISOString();
+      order.touch();
+      return this.recordUpdate('domainOrders', before, order, actorId, 'domain.management.cancel');
+    });
+  }
+
+  reconcileDomainOrder(id, input, actorId = null) {
+    const order = this.domainOrders.get(id);
+    if (!order) throw new ValidationError(`Unknown domain order: ${id}`);
+    if (!String(input.reason ?? '').trim()) throw new ValidationError('A reconciliation reason is required.');
+    const paymentStates = ['pending', 'paid', 'failed', 'refunded', 'partially_refunded'];
+    const refundStates = ['not_requested', 'pending', 'completed', 'failed'];
+    if (input.paymentState && !paymentStates.includes(input.paymentState)) throw new ValidationError('Invalid paymentState.');
+    if (input.refundState && !refundStates.includes(input.refundState)) throw new ValidationError('Invalid refundState.');
+    return this.transactional(() => {
+      const before = cloneRecord(order);
+      if (input.paymentState) order.paymentState = input.paymentState;
+      if (input.refundState) order.refundState = input.refundState;
+      if (Object.hasOwn(input, 'providerReference')) order.providerReference = input.providerReference || null;
+      if (Object.hasOwn(input, 'lastError')) order.lastError = input.lastError || null;
+      order.reconciledAt = new Date().toISOString();
+      order.touch();
+      return this.recordUpdate('domainOrders', before, order, actorId, 'domain.order.reconcile', {
+        reason: String(input.reason).slice(0, 500)
+      });
+    });
+  }
+
+  requestDomainTransfer(id, input, actorId = null) {
+    const order = this.domainOrders.get(id);
+    if (!order) throw new ValidationError(`Unknown domain order: ${id}`);
+    if (input.confirmation !== order.domain || !String(input.reason ?? '').trim()) {
+      throw new ValidationError('Transfer requires the exact domain confirmation and a reason.');
+    }
+    return this.transactional(() => {
+      const before = cloneRecord(order);
+      order.lifecycleState = 'transfer_pending';
+      order.timelineState = 'domain_pending';
+      order.autoRenew = false;
+      order.transferRequestedAt = new Date().toISOString();
+      order.transferReason = String(input.reason).slice(0, 500);
+      if (input.authCode) order.transferAuthCodeHash = hashToken(input.authCode);
+      order.touch();
+      return this.recordUpdate('domainOrders', before, order, actorId, 'domain.transfer.request');
+    });
+  }
+
+  collectDomainRenewalNotices(now = new Date(), actorId = 'system') {
+    const notices = [];
+    for (const order of this.domainOrders.values()) {
+      if (!order.expiryDate || !['active', 'expiring'].includes(order.lifecycleState)) continue;
+      const days = Math.ceil((new Date(order.expiryDate).getTime() - now.getTime()) / 86_400_000);
+      const threshold = [60, 30, 15, 7].find((value) => days <= value && !order.noticesSent.includes(value));
+      if (!threshold) continue;
+      const before = cloneRecord(order);
+      order.lifecycleState = days <= 0 ? 'expired' : 'expiring';
+      order.noticesSent = [...order.noticesSent, threshold];
+      order.touch(now);
+      this.recordUpdate('domainOrders', before, order, actorId, 'domain.renewal.notice');
+      notices.push({ orderId: order.id, organizationId: order.organizationId, domain: order.domain, days: threshold });
+    }
+    return notices;
   }
 
   submitAssignment(input, actorId = null) {
