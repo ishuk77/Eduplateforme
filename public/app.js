@@ -10,6 +10,16 @@ const state = {
 };
 
 const SUPPORTED_LOCALES = ['fr', 'en', 'es', 'pt', 'ar'];
+const DATE_FORMATS = ['YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY', 'DD.MM.YYYY'];
+const TIMEZONES = (() => {
+  try {
+    return Intl.supportedValuesOf('timeZone');
+  } catch {
+    return ['UTC', 'Africa/Dakar', 'Africa/Kigali', 'Africa/Nairobi', 'Europe/Paris', 'America/Toronto'];
+  }
+})();
+const ORGANIZATION_TYPES = ['school', 'university', 'higher-education', 'training-center'];
+const ORGANIZATION_STATUSES = ['pending', 'operational', 'suspended', 'closed'];
 const COUNTRY_CODES = ['BE', 'BR', 'CA', 'CD', 'CI', 'CM', 'DZ', 'ES', 'FR', 'GB', 'GH', 'GN', 'HT', 'KE', 'MA', 'ML', 'MX', 'NG', 'PT', 'RW', 'SN', 'TN', 'UG', 'US'];
 if (!SUPPORTED_LOCALES.includes(state.locale)) state.locale = 'fr';
 
@@ -111,17 +121,22 @@ const modules = [
       fields: [
         ['legalName', 'Nom légal', 'text', true],
         ['displayName', 'Nom affiché', 'text', true],
-        ['internalReference', 'Référence interne', 'text', true],
+        ['internalReference', 'Référence interne (option avancée)', 'text', false],
         ['countryCode', 'Code pays', 'text', true],
-        ['organizationType', 'Type', 'text', false],
+        ['organizationType', 'Type d’institution', 'select', true, ORGANIZATION_TYPES],
         ['nationalInstitutionId', 'Identifiant national', 'text', false],
         ['registrationNumber', 'Immatriculation', 'text', false],
         ['taxIdentifier', 'Identifiant fiscal', 'text', false],
-        ['legalForm', 'Forme juridique', 'text', false],
-        ['administrativeAuthority', 'Autorité administrative', 'text', false],
-        ['operationalStatus', 'Statut opérationnel', 'text', false]
+        ['legalForm', 'Forme juridique', 'select', false, ['public', 'private', 'nonprofit', 'religious', 'community', 'other']],
+        ['administrativeAuthority', 'Autorité administrative', 'select', false, ['ministry', 'regional-authority', 'municipality', 'accreditation-body', 'other']],
+        ['operationalStatus', 'Statut opérationnel', 'select', true, ORGANIZATION_STATUSES],
+        ['timezone', 'Fuseau horaire', 'select', true, TIMEZONES],
+        ['dateFormat', 'Format de date', 'select', true, DATE_FORMATS],
+        ['latitude', 'Latitude (facultative)', 'number', false],
+        ['longitude', 'Longitude (facultative)', 'number', false]
       ],
-      columns: ['displayName', 'countryCode', 'internalReference', 'nationalInstitutionId', 'registrationNumber', 'operationalStatus', 'status']
+      columns: ['displayName', 'organizationType', 'countryCode', 'internalReference', 'nationalInstitutionId', 'operationalStatus', 'timezone', 'status'],
+      note: 'La référence interne est générée automatiquement et reste distincte des identifiants nationaux et locaux. La géolocalisation est facultative et ne doit être saisie qu’avec une base légale.'
     }]
   },
   {
@@ -134,25 +149,25 @@ const modules = [
       {
         id: 'campuses', title: 'Sites et campus', path: '/institution/campuses',
         read: 'institution.read', write: 'institution.write',
-        fields: [['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['campusType', 'Type de site', 'text', false], ['localIdentifier', 'Identifiant local', 'text', false], ['timezone', 'Fuseau horaire', 'text', false]],
+        fields: [['code', 'Code stable du site', 'text', true], ['name', 'Nom affiché', 'text', true], ['campusType', 'Type de site', 'select', false, ['main-campus', 'campus', 'annex', 'training-site', 'online']], ['localIdentifier', 'Identifiant local', 'text', false], ['timezone', 'Fuseau horaire', 'select', false, TIMEZONES]],
         columns: ['code', 'name', 'campusType', 'localIdentifier', 'status']
       },
       {
         id: 'operatingAuthorizations', title: 'Autorisations de fonctionnement', path: '/institution/operating-authorizations',
         read: 'institution.read', write: 'institution.write',
-        fields: [['type', 'Type', 'text', true], ['authority', 'Autorité', 'text', true], ['jurisdiction', 'Juridiction', 'text', true], ['reference', 'Référence', 'text', true], ['validFrom', 'Valide du', 'date', false], ['validUntil', 'Valide au', 'date', false], ['evidenceReference', 'Preuve', 'text', false]],
+        fields: [['type', 'Type', 'select', true, ['school-operation', 'higher-education-operation', 'training-provider', 'temporary']], ['authority', 'Autorité', 'text', true], ['jurisdiction', 'Juridiction', 'text', true], ['reference', 'Référence', 'text', true], ['validFrom', 'Valide du', 'date', false], ['validUntil', 'Valide au', 'date', false], ['evidenceReference', 'Preuve téléversée', 'reference', false, '/documents', 'title']],
         columns: ['type', 'authority', 'jurisdiction', 'reference', 'validUntil', 'status']
       },
       {
         id: 'accreditations', title: 'Accréditations', path: '/institution/accreditations',
         read: 'institution.read', write: 'institution.write',
-        fields: [['accreditationType', 'Type', 'text', true], ['authority', 'Autorité', 'text', true], ['jurisdiction', 'Juridiction', 'text', true], ['targetType', 'Cible', 'select', true, ['institution', 'site', 'program', 'level', 'qualification']], ['targetId', 'Identifiant cible', 'text', true], ['reference', 'Référence', 'text', true], ['validUntil', 'Valide au', 'date', false]],
+        fields: [['accreditationType', 'Type', 'select', true, ['institutional', 'program', 'quality', 'professional']], ['authority', 'Autorité', 'text', true], ['jurisdiction', 'Juridiction', 'text', true], ['targetType', 'Cible', 'select', true, ['institution', 'site', 'program', 'level', 'qualification']], ['targetId', 'Identifiant cible', 'text', true], ['reference', 'Référence', 'text', true], ['validUntil', 'Valide au', 'date', false], ['evidenceReference', 'Preuve téléversée', 'reference', false, '/documents', 'title']],
         columns: ['accreditationType', 'targetType', 'targetId', 'reference', 'status']
       },
       {
         id: 'institutionVerifications', title: 'Vérification institutionnelle', path: '/institution/verifications',
         read: 'institution.read', write: 'institution.verify',
-        fields: [['publicCode', 'Code public', 'text', true], ['authority', 'Autorité', 'text', false], ['publicNote', 'Mention publique', 'textarea', false]],
+        fields: [['publicCode', 'Code public', 'text', true], ['authority', 'Autorité', 'text', false], ['evidenceReference', 'Preuve téléversée', 'reference', false, '/documents', 'title'], ['publicNote', 'Mention publique', 'textarea', false]],
         columns: ['publicCode', 'status', 'authority', 'verifiedAt', 'validUntil']
       }
     ]
@@ -167,26 +182,30 @@ const modules = [
       {
         id: 'guardianProfiles', title: 'Parents et tuteurs', path: '/profiles/guardians',
         read: 'profiles.read', write: 'profiles.write',
-        fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['relationshipTypes', 'Types de relation (JSON)', 'json', false], ['preferredContactChannels', 'Canaux préférés (JSON)', 'json', false]],
-        columns: ['personId', 'relationshipTypes', 'preferredContactChannels', 'status']
+        fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['relationshipTypes', 'Types de relation', 'multiselect', false, ['parent', 'guardian', 'mother', 'father', 'legal-representative', 'emergency-contact']], ['preferredContactChannels', 'Canaux préférés', 'multiselect', false, ['email', 'phone', 'sms', 'internal']]],
+        columns: ['personId', 'relationshipTypes', 'preferredContactChannels', 'status'],
+        helpAnchor: 'profiles'
       },
       {
         id: 'professionalProfiles', title: 'Enseignants et staff', path: '/profiles/professionals',
         read: 'profiles.read', write: 'profiles.write',
-        fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['professionalType', 'Métier', 'select', true, ['teacher', 'professor', 'trainer', 'staff']], ['specialties', 'Spécialités (JSON)', 'json', false], ['qualifications', 'Qualifications (JSON)', 'json', false], ['assignmentOrganizationIds', 'Organisations autorisées (JSON)', 'json', false]],
-        columns: ['personId', 'professionalType', 'specialties', 'qualifications', 'assignmentOrganizationIds', 'status']
+        fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['professionalType', 'Métier', 'select', true, ['teacher', 'professor', 'trainer', 'staff']], ['specialties', 'Spécialités (séparées par des virgules)', 'tags', false], ['qualifications', 'Qualifications (séparées par des virgules)', 'tags', false], ['assignmentOrganizationIds', 'Organisations autorisées', 'multi-reference', false, '/organizations', 'displayName']],
+        columns: ['personId', 'professionalType', 'specialties', 'qualifications', 'assignmentOrganizationIds', 'status'],
+        helpAnchor: 'profiles'
       },
       {
         id: 'guardianLearnerRelations', title: 'Relations responsable-apprenant', path: '/profiles/guardian-relations',
         read: 'profiles.read', write: 'profiles.write',
-        fields: [['guardianProfileId', 'Responsable', 'reference', true, '/profiles/guardians', 'personId'], ['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['relationship', 'Relation', 'text', true], ['permissions', 'Permissions (JSON)', 'json', false]],
-        columns: ['guardianProfileId', 'learnerId', 'relationship', 'permissions', 'status']
+        fields: [['guardianProfileId', 'Responsable', 'reference', true, '/profiles/guardians', 'personId'], ['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['relationship', 'Relation', 'select', true, ['mother', 'father', 'guardian', 'legal-representative', 'other']], ['permissions', 'Accès accordés', 'multiselect', false, ['academic.read', 'attendance.read', 'communications.read', 'documents.read']]],
+        columns: ['guardianProfileId', 'learnerId', 'relationship', 'permissions', 'status'],
+        helpAnchor: 'profiles'
       },
       {
         id: 'professionalAssignments', title: 'Affectations professionnelles', path: '/profiles/professional-assignments',
         read: 'profiles.read', write: 'profiles.write',
-        fields: [['professionalProfileId', 'Profil', 'reference', true, '/profiles/professionals', 'personId'], ['campusId', 'Campus', 'reference', false, '/institution/campuses', 'name'], ['roleTitle', 'Fonction', 'text', true], ['employmentType', 'Contrat', 'text', false], ['startsOn', 'Début', 'date', true], ['endsOn', 'Fin', 'date', false]],
-        columns: ['professionalProfileId', 'campusId', 'roleTitle', 'startsOn', 'endsOn', 'status']
+        fields: [['professionalProfileId', 'Profil', 'reference', true, '/profiles/professionals', 'personId'], ['campusId', 'Campus', 'reference', false, '/institution/campuses', 'name'], ['roleTitle', 'Fonction', 'select', true, ['teacher', 'professor', 'trainer', 'director', 'registrar', 'counselor', 'support-staff']], ['employmentType', 'Contrat', 'select', false, ['permanent', 'fixed-term', 'part-time', 'contractor', 'volunteer']], ['startsOn', 'Début', 'date', true], ['endsOn', 'Fin', 'date', false]],
+        columns: ['professionalProfileId', 'campusId', 'roleTitle', 'startsOn', 'endsOn', 'status'],
+        helpAnchor: 'profiles'
       }
     ]
   },
@@ -206,7 +225,8 @@ const modules = [
         ['birthDate', 'Date de naissance', 'date', false],
         ['preferredLocale', 'Langue', 'text', false]
       ],
-      columns: ['givenName', 'familyName', 'preferredLocale', 'status']
+      columns: ['givenName', 'familyName', 'preferredLocale', 'status'],
+      importKind: 'people'
     }]
   },
   {
@@ -219,26 +239,28 @@ const modules = [
       {
         id: 'years', title: 'Années scolaires', path: '/academics/years',
         read: 'academics.read', write: 'academics.write',
-        fields: [['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['startsOn', 'Début', 'date', true], ['endsOn', 'Fin', 'date', true]],
+        fields: [['code', 'Code technique stable (généré si vide)', 'text', false], ['name', 'Libellé affiché (généré si vide)', 'text', false], ['startsOn', 'Date de début', 'date', true], ['endsOn', 'Date de fin', 'date', true]],
         columns: ['code', 'name', 'startsOn', 'endsOn']
       },
       {
         id: 'programs', title: 'Programmes', path: '/academics/programs',
         read: 'academics.read', write: 'academics.write',
-        fields: [['academicYearId', 'Année scolaire', 'reference', true, '/academics/years', 'name'], ['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['cycle', 'Cycle', 'text', false]],
+        fields: [['academicYearId', 'Année scolaire', 'reference', true, '/academics/years', 'name'], ['code', 'Code stable', 'text', true], ['name', 'Libellé affiché', 'text', true], ['cycle', 'Cycle', 'select', false, ['preschool', 'primary', 'lower-secondary', 'upper-secondary', 'higher-education', 'vocational', 'continuing-education']]],
         columns: ['code', 'name', 'cycle', 'status']
       },
       {
         id: 'classes', title: 'Classes', path: '/academics/classes',
         read: 'academics.read', write: 'academics.write',
-        fields: [['academicYearId', 'Année scolaire', 'reference', true, '/academics/years', 'name'], ['programId', 'Programme', 'reference', true, '/academics/programs', 'name'], ['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['levelCode', 'Niveau', 'text', false]],
+        fields: [['academicYearId', 'Année scolaire', 'reference', true, '/academics/years', 'name'], ['programId', 'Programme', 'reference', true, '/academics/programs', 'name'], ['code', 'Identifiant stable (ex. 6A-2026)', 'text', true], ['name', 'Nom affiché du groupe/section (ex. 6e A)', 'text', true], ['levelCode', 'Niveau', 'select', false, ['PRESCHOOL', 'KINDERGARTEN', 'PRIMARY-1', 'PRIMARY-2', 'PRIMARY-3', 'PRIMARY-4', 'PRIMARY-5', 'PRIMARY-6', 'LOWER-SECONDARY', 'UPPER-SECONDARY', 'HIGHER-EDUCATION', 'VOCATIONAL']]],
         columns: ['code', 'name', 'levelCode', 'status']
       },
       {
         id: 'learners', title: 'Apprenants', path: '/academics/learners',
         read: 'academics.read', write: 'academics.write',
         fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['learnerNumber', 'Matricule', 'text', false]],
-        columns: ['learnerNumber', 'personId', 'status']
+        columns: ['learnerNumber', 'personId', 'status'],
+        importKind: 'people',
+        helpAnchor: 'people'
       },
       {
         id: 'enrollments', title: 'Inscriptions', path: '/academics/enrollments',
@@ -255,8 +277,8 @@ const modules = [
       {
         id: 'academicPeriods', title: 'Périodes', path: '/academics/periods',
         read: 'academics.read', write: 'academics.write',
-        fields: [['academicYearId', 'Année scolaire', 'reference', true, '/academics/years', 'name'], ['periodType', 'Type', 'select', true, ['semester', 'trimester']], ['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['startsOn', 'Début', 'date', true], ['endsOn', 'Fin', 'date', true]],
-        columns: ['code', 'name', 'periodType', 'startsOn', 'endsOn']
+        fields: [['academicYearId', 'Année scolaire', 'reference', true, '/academics/years', 'name'], ['periodType', 'Type', 'select', true, ['semester', 'trimester']], ['sequence', 'Numéro de séquence', 'number', true], ['code', 'Code stable', 'text', true], ['name', 'Libellé affiché', 'text', true], ['startsOn', 'Date de début', 'date', true], ['endsOn', 'Date de fin', 'date', true]],
+        columns: ['sequence', 'code', 'name', 'periodType', 'startsOn', 'endsOn']
       },
       {
         id: 'academicLevels', title: 'Niveaux et spécialités', path: '/academics/levels',
@@ -279,7 +301,7 @@ const modules = [
       {
         id: 'learnerLifecycleEvents', title: 'Parcours longitudinal', path: '/academics/lifecycle-events',
         read: 'lifecycle.read', write: 'lifecycle.write',
-        fields: [['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['eventType', 'Événement', 'select', true, ['admission', 'enrollment', 'promotion', 'repetition', 'class_change', 'program_change', 'suspension', 'resumption', 'withdrawal', 'expulsion', 'graduation', 'certification', 'death', 'archiving']], ['authority', 'Autorité', 'text', true], ['reason', 'Motif', 'textarea', false], ['evidenceReference', 'Preuve', 'text', false], ['previousContext', 'Ancien contexte (JSON)', 'json', false], ['newContext', 'Nouveau contexte (JSON)', 'json', false]],
+        fields: [['learnerId', 'Apprenant', 'reference', true, '/academics/learners', 'learnerNumber'], ['eventType', 'Événement', 'select', true, ['admission', 'enrollment', 'promotion', 'repetition', 'class_change', 'program_change', 'suspension', 'resumption', 'withdrawal', 'expulsion', 'graduation', 'certification', 'death', 'archiving']], ['authority', 'Autorité', 'text', true], ['reason', 'Motif', 'textarea', false], ['evidenceReference', 'Preuve téléversée', 'reference', false, '/documents', 'title'], ['previousContext', 'Ancien contexte (JSON)', 'json', false], ['newContext', 'Nouveau contexte (JSON)', 'json', false]],
         columns: ['occurredAt', 'learnerId', 'eventType', 'authority', 'reason'],
         createOnly: true
       }
@@ -378,8 +400,9 @@ const modules = [
     resources: [
       {
         id: 'fees', title: 'Types de frais', path: '/finance/fees', read: 'finance.read', write: 'finance.write',
-        fields: [['feeType', 'Type de frais', 'text', true], ['amount', 'Montant', 'number', true], ['currency', 'Devise', 'select', true, ['USD', 'EUR', 'CDF', 'RWF', 'HTG', 'KES', 'UGX']]],
-        columns: ['feeType', 'amount', 'currency']
+        fields: [['feeType', 'Type de frais', 'select', true, ['registration', 'tuition', 'training', 'other']], ['programId', 'Programme (facultatif)', 'reference', false, '/academics/programs', 'name'], ['amount', 'Montant', 'number', true], ['currency', 'Devise', 'select', true, ['USD', 'EUR', 'CDF', 'RWF', 'HTG', 'KES', 'UGX']], ['accessPolicy', 'Activation des données académiques', 'select', true, ['no_payment_required', 'registration_fee_paid', 'minimum_percentage', 'minimum_amount', 'fully_paid']], ['minimumPercentage', 'Pourcentage minimum', 'number', false], ['minimumAmount', 'Montant minimum', 'number', false], ['freeTraining', 'Formation gratuite (accès immédiat)', 'checkbox', false]],
+        columns: ['feeType', 'programId', 'amount', 'currency', 'accessPolicy', 'freeTraining'],
+        helpAnchor: 'payment-activation'
       },
       {
         id: 'invoices', title: 'Factures et soldes', path: '/finance/invoices', read: 'finance.read', write: 'finance.write',
@@ -445,8 +468,9 @@ const modules = [
     description: 'Définissez la langue, la devise, le fuseau et le format de date de l’organisation.',
     resources: [{
       id: 'localizationProfiles', title: 'Profil de localisation', path: '/i18n/profiles', read: 'i18n.read', write: 'i18n.write',
-      fields: [['countryCode', 'Code pays', 'text', true], ['city', 'Ville', 'text', true], ['language', 'Langue', 'select', true, ['fr', 'en', 'es', 'pt', 'ar']], ['currency', 'Devise', 'select', true, ['USD', 'EUR', 'CDF', 'RWF', 'HTG', 'KES', 'UGX']], ['timezone', 'Fuseau horaire', 'text', true], ['dateFormat', 'Format de date', 'text', true]],
-      columns: ['countryCode', 'city', 'language', 'currency', 'timezone', 'dateFormat'], createOnly: true, history: false
+      fields: [['countryCode', 'Pays', 'text', true], ['city', 'Ville', 'text', true], ['language', 'Langue', 'select', true, ['fr', 'en', 'es', 'pt', 'ar']], ['currency', 'Devise', 'select', true, ['USD', 'EUR', 'CDF', 'RWF', 'HTG', 'KES', 'UGX']], ['timezone', 'Fuseau horaire', 'select', true, TIMEZONES], ['dateFormat', 'Format de date', 'select', true, DATE_FORMATS], ['latitude', 'Latitude facultative', 'number', false], ['longitude', 'Longitude facultative', 'number', false]],
+      columns: ['countryCode', 'city', 'language', 'currency', 'timezone', 'dateFormat', 'latitude', 'longitude'], createOnly: true, history: false,
+      note: 'Les coordonnées sont facultatives. Ne les enregistrez que si elles sont nécessaires et autorisées.'
     }]
   },
   {
@@ -606,8 +630,8 @@ const modules = [
     path: '/references',
     label: 'Référentiels',
     eyebrow: 'Standards',
-    description: 'Étendez les catalogues ISO, ISCED et nationaux sans coder de règle pays.',
-    resources: [{ id: 'referenceEntries', title: 'Extensions tenant', path: '/references/entries', read: 'references.read', write: 'references.write', fields: [['catalog', 'Catalogue', 'text', true], ['code', 'Code', 'text', true], ['labels', 'Libellés FR/EN (JSON)', 'json', true], ['countryCode', 'Pays', 'text', false]], columns: ['catalog', 'code', 'labels', 'countryCode', 'standard'] }]
+    description: 'Un catalogue regroupe une famille de valeurs; le code est l’identifiant stable utilisé par les imports et intégrations.',
+    resources: [{ id: 'referenceEntries', title: 'Extensions tenant', path: '/references/entries', read: 'references.read', write: 'references.write', fields: [['catalog', 'Catalogue', 'select', true, ['levels', 'programs', 'subjects', 'qualifications', 'grading-scales', 'institution-codes', 'administrative-levels', 'custom']], ['code', 'Code stable', 'text', true], ['labels', 'Libellés localisés', 'localized-labels', true], ['countryCode', 'Pays concerné (facultatif)', 'text', false]], columns: ['catalog', 'code', 'labels', 'countryCode', 'standard'], importKind: 'references', note: 'Exemple : catalogue levels, code PRIMARY-1, libellé Première année primaire. Les codes ne sont pas des libellés et doivent rester stables.' }]
   },
   {
     id: 'documents',
@@ -977,23 +1001,30 @@ function onboarding() {
     <main class="public-layout" id="main-content">
       <a class="brand-mark public-brand" href="/">Eduplateforme</a>
       <section class="auth-card surface-card">
-        <p class="section-label">Dernière étape</p>
-        <h1>Créez votre établissement</h1>
-        <p class="section-copy">Ces informations définissent votre espace isolé. Vous en deviendrez administrateur.</p>
+        <p class="section-label">Après connexion · Administration</p>
+        <h1>Ajoutez une institution</h1>
+        <p class="section-copy">Votre compte administrateur est déjà actif. Créez ici votre première institution; vous pourrez ensuite en ajouter d’autres depuis Organisations.</p>
         <div id="feedback" class="feedback" role="alert" tabindex="-1" hidden></div>
         <form id="onboarding-form" class="form-grid">
           <label>Nom légal<input name="legalName" required minlength="2"></label>
           <label>Nom affiché<input name="displayName" required minlength="2"></label>
-          <label>Référence interne<input name="internalReference" required minlength="2" placeholder="ECOLE-001"></label>
           <label>Pays<select name="countryCode" required>${countryOptions('FR')}</select></label>
           <label>Langue de l’espace<select name="locale">${SUPPORTED_LOCALES.map((locale) => `<option value="${locale}" ${state.locale === locale ? 'selected' : ''}>${locale.toUpperCase()}</option>`).join('')}</select></label>
-          <label>Type<select name="organizationType"><option value="institution">Établissement</option><option value="school">École</option><option value="university">Université</option><option value="training-center">Centre de formation</option><option value="campus">Campus</option></select></label>
-          <label>Identifiant national<input name="nationalInstitutionId"></label>
-          <label>Immatriculation<input name="registrationNumber"></label>
-          <label>Identifiant fiscal<input name="taxIdentifier"></label>
-          <label>Forme juridique<input name="legalForm"></label>
-          <label>Autorité administrative<input name="administrativeAuthority"></label>
-          <label>Statut opérationnel<select name="operationalStatus"><option value="pending">En attente</option><option value="operational">Opérationnel</option><option value="suspended">Suspendu</option></select></label>
+          <label>Type d’institution<select name="organizationType" required><option value="school">École</option><option value="university">Université</option><option value="higher-education">Établissement d’enseignement supérieur</option><option value="training-center">Centre de formation</option></select></label>
+          <label>Fuseau horaire<select name="timezone" required>${TIMEZONES.map((zone) => `<option value="${escapeHtml(zone)}" ${zone === 'UTC' ? 'selected' : ''}>${escapeHtml(zone)}</option>`).join('')}</select></label>
+          <label>Format de date<select name="dateFormat">${DATE_FORMATS.map((format) => `<option value="${format}">${format} · ${format.replace('YYYY', '2026').replace('MM', '09').replace('DD', '12')}</option>`).join('')}</select></label>
+          <label>Statut opérationnel<select name="operationalStatus"><option value="pending">En préparation</option><option value="operational" selected>Opérationnel</option><option value="suspended">Suspendu</option><option value="closed">Fermé</option></select></label>
+          <details class="form-wide"><summary>Identifiants et paramètres avancés</summary><div class="form-grid">
+            <label>Référence interne (facultative)<input name="internalReference" minlength="2" placeholder="Générée automatiquement"></label>
+            <label>Identifiant national<input name="nationalInstitutionId"><small class="field-status">Attribué par une autorité; distinct de la référence interne.</small></label>
+            <label>Immatriculation<input name="registrationNumber"></label>
+            <label>Identifiant fiscal<input name="taxIdentifier"></label>
+            <label>Forme juridique<select name="legalForm"><option value="">Non renseignée</option><option value="public">Publique</option><option value="private">Privée</option><option value="nonprofit">Sans but lucratif</option><option value="religious">Confessionnelle</option><option value="community">Communautaire</option><option value="other">Autre</option></select></label>
+            <label>Autorité administrative<select name="administrativeAuthority"><option value="">Non renseignée</option><option value="ministry">Ministère</option><option value="regional-authority">Autorité régionale</option><option value="municipality">Municipalité</option><option value="accreditation-body">Organisme d’accréditation</option><option value="other">Autre</option></select></label>
+            <label>Latitude facultative<input name="latitude" type="number" min="-90" max="90" step="any"></label>
+            <label>Longitude facultative<input name="longitude" type="number" min="-180" max="180" step="any"></label>
+            <p class="field-status form-wide">La géolocalisation précise est facultative. Ne la saisissez qu’avec une finalité et une base légale documentées.</p>
+          </div></details>
           <label class="form-wide">Adresse du siège (JSON)<textarea name="headquartersAddress" placeholder='{"city":"Dakar"}'></textarea></label>
           <label class="form-wide">Contact officiel (JSON)<textarea name="officialContact" placeholder='{"email":"contact@example.edu"}'></textarea></label>
           <button class="primary-button" type="submit">Créer l’établissement</button>
@@ -1072,8 +1103,25 @@ function fieldInput(field, record = {}) {
         : `${items.length} option(s) disponible(s).`;
     return `<label>${label}<select name="${name}" ${required ? 'required' : ''} ${items.length === 0 ? 'disabled' : ''}><option value="">${reference?.error ? 'Erreur de chargement' : items.length === 0 ? 'Aucune option disponible' : 'Sélectionner…'}</option>${items.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === value ? 'selected' : ''}>${escapeHtml(item[optionLabel] || item.id || 'Sans libellé')}</option>`).join('')}</select><small class="field-status" role="status">${status}</small></label>`;
   }
+  if (type === 'multi-reference') {
+    const reference = state.references.get(source);
+    const items = reference?.items ?? [];
+    const selected = new Set(Array.isArray(value) ? value : []);
+    return `<label>${label}<select name="${name}" multiple ${required ? 'required' : ''} ${items.length === 0 ? 'disabled' : ''}>${items.map((item) => `<option value="${escapeHtml(item.id)}" ${selected.has(item.id) ? 'selected' : ''}>${escapeHtml(item[optionLabel] || item.id)}</option>`).join('')}</select><small class="field-status" role="status">${reference?.error ? 'Erreur de chargement.' : items.length ? `${items.length} option(s) disponible(s).` : 'Aucune option autorisée.'}</small></label>`;
+  }
   if (type === 'select') {
     return `<label>${label}<select name="${name}" ${required ? 'required' : ''}><option value="">Sélectionner…</option>${source.map((option) => `<option value="${option}" ${option === value ? 'selected' : ''}>${option}</option>`).join('')}</select></label>`;
+  }
+  if (type === 'multiselect') {
+    const selected = new Set(Array.isArray(value) ? value : []);
+    return `<label>${label}<select name="${name}" multiple ${required ? 'required' : ''}>${source.map((option) => `<option value="${option}" ${selected.has(option) ? 'selected' : ''}>${option}</option>`).join('')}</select><small class="field-status">Utilisez Ctrl/Cmd pour sélectionner plusieurs valeurs.</small></label>`;
+  }
+  if (type === 'tags') {
+    return `<label>${label}<input name="${name}" type="text" value="${escapeHtml(Array.isArray(value) ? value.join(', ') : value)}" placeholder="valeur 1, valeur 2"></label>`;
+  }
+  if (type === 'localized-labels') {
+    const labels = value && typeof value === 'object' ? value : {};
+    return `<fieldset class="form-wide"><legend>${label}</legend><div class="form-grid">${SUPPORTED_LOCALES.map((locale) => `<label>${locale.toUpperCase()}<input name="${name}.${locale}" value="${escapeHtml(labels[locale] ?? '')}" ${locale === 'fr' ? 'required' : ''}></label>`).join('')}</div></fieldset>`;
   }
   if (type === 'textarea') {
     return `<label class="form-wide">${label}<textarea name="${name}" ${required ? 'required' : ''}>${escapeHtml(value)}</textarea></label>`;
@@ -1092,19 +1140,30 @@ function fieldInput(field, record = {}) {
 
 function resourceSection(resource) {
   const payload = state.resources.get(resource.id) ?? { items: [], page: { total: 0 } };
+  const columnLabels = {
+    displayName: 'Nom affiché', organizationType: 'Type', countryCode: 'Pays',
+    internalReference: 'Référence interne', nationalInstitutionId: 'Identifiant national',
+    operationalStatus: 'État opérationnel', timezone: 'Fuseau horaire', status: 'Statut',
+    code: 'Code stable', name: 'Libellé', startsOn: 'Début', endsOn: 'Fin',
+    periodType: 'Type de période', sequence: 'Numéro', learnerNumber: 'Matricule',
+    personId: 'Personne', classId: 'Classe', labels: 'Libellés localisés',
+    catalog: 'Catalogue', standard: 'Standard', accessPolicy: 'Politique d’activation',
+    freeTraining: 'Formation gratuite'
+  };
   const rows = payload.items.map((record) => `
     <article class="data-card" data-id="${escapeHtml(record.id)}">
-      <dl>${resource.columns.map((column) => `<div><dt>${escapeHtml(column)}</dt><dd>${column === 'countryCode' ? escapeHtml(countryIndicator(record[column])) : formatValue(record[column])}</dd></div>`).join('')}</dl>
+      <dl>${resource.columns.map((column) => `<div><dt>${escapeHtml(columnLabels[column] ?? column)}</dt><dd>${column === 'countryCode' ? escapeHtml(countryIndicator(record[column])) : formatValue(record[column])}</dd></div>`).join('')}</dl>
       ${can(resource.write) && resource.action && (!resource.action.show || resource.action.show(record)) ? `
         <form class="inline-action-form" data-record-action="${resource.id}" data-id="${escapeHtml(record.id)}">
           ${resource.action.fields.map((field) => fieldInput(field)).join('')}
           <button class="secondary-button" type="submit">${typeof resource.action.label === 'function' ? resource.action.label(record) : resource.action.label}</button>
         </form>` : ''}
-      ${resource.history !== false ? `<div class="row-actions"><button type="button" data-action="history" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Historique</button>${can(resource.write) && !resource.createOnly ? `<button type="button" data-action="edit" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Modifier</button><button class="danger-link" type="button" data-action="archive" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Archiver</button>` : ''}${resource.id === 'classes' && can('academics.write') && can('people.write') && can('accounts.write') ? `<a class="secondary-button" href="/imports?kind=class-roster&classId=${encodeURIComponent(record.id)}">Importer la liste</a>` : ''}</div><div class="record-history" aria-live="polite"></div>` : ''}
+      ${resource.history !== false ? `<div class="row-actions"><button type="button" data-action="history" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Historique</button>${can(resource.write) && !resource.createOnly ? `<button type="button" data-action="edit" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Modifier</button><button class="danger-link" type="button" data-action="archive" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Archiver</button>` : ''}${resource.id === 'classes' && can('academics.write') && can('people.write') && can('accounts.write') ? `<a class="secondary-button" href="/imports?kind=people&classId=${encodeURIComponent(record.id)}">Importer des personnes</a>` : ''}</div><div class="record-history" aria-live="polite"></div>` : ''}
     </article>`).join('');
   return `
     <section class="surface-card resource-section" id="resource-${resource.id}">
-      <div class="section-header"><div><p class="section-label">${payload.page.total} élément(s)</p><h2>${resource.title}</h2></div><a class="help-link" href="/help#${resource.id}">Aide</a></div>
+      <div class="section-header"><div><p class="section-label">${payload.page.total} élément(s)</p><h2>${resource.title}</h2></div><div class="form-actions">${resource.importKind ? `<a class="secondary-button" href="/imports?kind=${encodeURIComponent(resource.importKind)}">Importer CSV/XLSX</a>` : ''}<a class="help-link" href="/help#${resource.helpAnchor ?? resource.id}">Aide</a></div></div>
+      ${resource.note ? `<p class="resource-summary">${escapeHtml(resource.note)}</p>` : ''}
       ${resource.summary ? `<p class="resource-summary" role="status">${escapeHtml(resource.summary(payload.items))}</p>` : ''}
       ${can(resource.write) && resource.create !== false ? `
         <details class="editor-panel">
@@ -1122,7 +1181,7 @@ function resourceSection(resource) {
 async function loadReferences(module) {
   const paths = [...new Set(module.resources.flatMap((resource) =>
     [...resource.fields, ...(resource.action?.fields ?? [])]
-      .filter((field) => field[2] === 'reference')
+      .filter((field) => ['reference', 'multi-reference'].includes(field[2]))
       .map((field) => field[4])
   ))];
   await Promise.all(paths.map(async (path) => {
@@ -1210,9 +1269,12 @@ async function dashboard() {
       financeCollected: 'Finances', lmsActivityCount: 'Activité LMS',
       dataQualityScore: 'Qualité'
     };
+    const pendingPayment = roleDashboard.academicAccess?.active === false
+      && roleDashboard.academicAccess.reason === 'payment_pending';
     app.innerHTML = shell(`
       <main class="content-stack" id="main-content">
         <section class="page-heading"><p class="section-label">Pilotage · ${escapeHtml(roleDashboard.experienceRole ?? roleDashboard.role)}</p><h1>Tableau de bord</h1><p>Chaque carte dépend du rôle, des permissions et des données réellement disponibles.</p></section>
+        ${pendingPayment ? `<section class="surface-card resource-section" role="status"><p class="section-label">Accès en attente</p><h2>Paiement à régulariser</h2><p>Votre tableau de bord est actif, mais les données académiques et contenus d’apprentissage restent masqués jusqu’à satisfaction de la politique <strong>${escapeHtml(roleDashboard.academicAccess.policy)}</strong>. Contactez l’administration; aucune note, présence ou progression n’est affichée ici.</p></section>` : ''}
         <section class="metric-grid">${roleDashboard.cards.map(({ metric, value }) => `<article class="metric-card surface-card"><span>${labels[metric] ?? metric}</span><strong>${value ?? '—'}</strong><small>${value == null ? 'Non disponible ou masqué' : 'Donnée tenant calculée'}</small></article>`).join('') || '<p class="empty-state">Aucun indicateur autorisé.</p>'}</section>
         <section class="surface-card quick-start"><h2>Prochaines actions</h2><div class="action-grid">${roleDashboard.nextSteps.map((step) => `<a class="secondary-button" href="${escapeHtml(step.path)}">${escapeHtml(step.label)}</a>`).join('') || '<p>Aucune action supplémentaire autorisée.</p>'}</div></section>
         <section class="surface-card quick-start"><h2>Espaces autorisés</h2><p>${roleDashboard.availableModules.map(escapeHtml).join(' · ') || 'Aucun module opérationnel supplémentaire.'}</p></section>
@@ -1260,7 +1322,7 @@ async function importsPage() {
   app.innerHTML = shell('<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">Opérations quotidiennes</p><h1>Imports CSV/XLSX</h1><p>Chargement des classes autorisées…</p></section></main>', 'imports');
   bindShell();
   const selected = new URLSearchParams(window.location.search);
-  const initialKind = ['learners', 'staff', 'class-roster'].includes(selected.get('kind')) ? selected.get('kind') : 'learners';
+  const initialKind = ['people', 'learners', 'staff', 'class-roster', 'references'].includes(selected.get('kind')) ? selected.get('kind') : 'people';
   let classes = { items: [] };
   try {
     classes = await apiRequest('/academics/classes?limit=200');
@@ -1273,9 +1335,10 @@ async function importsPage() {
       <section class="surface-card resource-section">
         <h2>1. Préparer et prévisualiser</h2>
         <form id="import-form" class="form-grid">
-          <label>Type d’import<select name="kind"><option value="learners" ${initialKind === 'learners' ? 'selected' : ''}>Apprenants / étudiants</option><option value="class-roster" ${initialKind === 'class-roster' ? 'selected' : ''}>Liste d’une classe</option><option value="staff" ${initialKind === 'staff' ? 'selected' : ''}>Enseignants / formateurs</option></select></label>
-          <label>Classe cible<select name="classId"><option value="">Selon classCode du fichier</option>${classes.items.map((item) => `<option value="${escapeHtml(item.id)}" ${selected.get('classId') === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.code || item.id)}</option>`).join('')}</select><small class="field-status">${classes.items.length ? `${classes.items.length} classe(s) autorisée(s).` : 'Aucune classe disponible. Créez année, programme et classe avant un import d’apprenants.'}</small></label>
+          <label>Type d’import<select name="kind"><option value="people" ${initialKind === 'people' ? 'selected' : ''}>Personnes unifiées (recommandé)</option><option value="learners" ${initialKind === 'learners' ? 'selected' : ''}>Apprenants (ancien modèle)</option><option value="class-roster" ${initialKind === 'class-roster' ? 'selected' : ''}>Liste d’une classe</option><option value="staff" ${initialKind === 'staff' ? 'selected' : ''}>Équipe (ancien modèle)</option><option value="references" ${initialKind === 'references' ? 'selected' : ''}>Catalogues et codes</option></select></label>
+          <label id="import-class-field">Classe cible<select name="classId"><option value="">Selon classCode du fichier</option>${classes.items.map((item) => `<option value="${escapeHtml(item.id)}" ${selected.get('classId') === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.code || item.id)}</option>`).join('')}</select><small class="field-status">${classes.items.length ? `${classes.items.length} classe(s) autorisée(s).` : 'Aucune classe disponible. Créez année, programme et classe avant un import d’apprenants.'}</small></label>
           <label class="form-wide">Fichier CSV ou XLSX (5 Mio, 1 000 lignes maximum)<input name="file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
+          <p class="resource-summary form-wide">Le modèle Personnes adapte les champs selon <code>personType</code>. Pour un apprenant, renseignez matricule, niveau, classe et politique de compte; pour un responsable, relation et contact; pour un professionnel, métier, fonction et date de début. Le modèle Référentiels utilise catalogue + code stable + libellés FR/EN/ES/PT/AR.</p>
           <div class="form-actions form-wide"><button class="secondary-button" id="template-download" type="button">Télécharger le modèle CSV</button><button class="primary-button" type="submit">Prévisualiser sans écrire</button></div>
         </form>
       </section>
@@ -1286,6 +1349,12 @@ async function importsPage() {
   const form = document.querySelector('#import-form');
   const resultRegion = document.querySelector('#import-result');
   let pendingPayload = null;
+  const updateClassVisibility = () => {
+    const kind = new FormData(form).get('kind');
+    document.querySelector('#import-class-field').hidden = ['staff', 'references'].includes(kind);
+  };
+  form.elements.kind.addEventListener('change', updateClassVisibility);
+  updateClassVisibility();
   document.querySelector('#template-download').addEventListener('click', async () => {
     try {
       await downloadImportTemplate(new FormData(form).get('kind'));
@@ -1570,7 +1639,7 @@ async function helpPage() {
     app.innerHTML = shell(`
       <main class="content-stack" id="main-content">
         <section class="page-heading"><p class="section-label">Guide v${escapeHtml(help.version)}</p><h1>Guide des modules</h1><p>Permissions, prérequis, actions et parcours recommandés. La traduction métier est progressive avec fallback français non vide.</p></section>
-        ${help.guides.map((guide) => `<section class="surface-card resource-section" id="${escapeHtml(guide.id)}"><p class="section-label">${escapeHtml(guide.audience.join(' · '))}</p><h2>${escapeHtml(guide.title)}</h2><p><strong>Permissions :</strong> ${guide.permissions.map(escapeHtml).join(', ')}</p><p><strong>Prérequis :</strong> ${guide.prerequisites.map(escapeHtml).join(' → ')}</p><ol>${guide.workflow.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol><p><strong>Actions :</strong> ${guide.actions.map(escapeHtml).join(' · ')}</p></section>`).join('')}
+        ${help.guides.map((guide) => `<section class="surface-card resource-section" id="${escapeHtml(guide.id)}"><p class="section-label">${escapeHtml(guide.audience.join(' · '))}</p><h2>${escapeHtml(guide.title)}</h2><p><strong>Permissions :</strong> ${guide.permissions.map(escapeHtml).join(', ')}</p><p><strong>Prérequis :</strong> ${guide.prerequisites.map(escapeHtml).join(' → ')}</p><h3>Workflow et champs</h3><ol>${guide.workflow.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol><p><strong>Actions et schéma d’import :</strong> ${guide.actions.map(escapeHtml).join(' · ')}</p></section>`).join('')}
         <section class="surface-card resource-section"><h2>Questions fréquentes</h2>${help.faq.map((item) => `<details><summary>${escapeHtml(item.question)}</summary><p>${escapeHtml(item.answer)}</p></details>`).join('')}</section>
       </main>`, 'help');
     bindShell();
@@ -1636,8 +1705,15 @@ function bindResources(module) {
         const formData = new FormData(form);
         recordId = formData.get('_recordId');
         body = Object.fromEntries(resource.fields.map(([name, , type]) => {
+          if (type === 'localized-labels') {
+            return [name, Object.fromEntries(SUPPORTED_LOCALES
+              .map((locale) => [locale, String(formData.get(`${name}.${locale}`) ?? '').trim()])
+              .filter(([, label]) => label))];
+          }
+          if (type === 'multiselect' || type === 'multi-reference') return [name, formData.getAll(name)];
           const value = formData.get(name);
           if (type === 'json' && value) return [name, JSON.parse(value)];
+          if (type === 'tags') return [name, String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean)];
           if (type === 'number' && value !== '') return [name, Number(value)];
           if (type === 'checkbox') return [name, form.elements[name].checked];
           return [name, value];
@@ -1716,10 +1792,21 @@ function bindResources(module) {
       details.open = true;
       form.elements._recordId.value = record.id;
       for (const [name, , type] of resource.fields) {
-        if (form.elements[name]) {
-          form.elements[name].value = type === 'json' && record[name] != null
-            ? JSON.stringify(record[name])
-            : (record[name] ?? '');
+        if (type === 'localized-labels') {
+          for (const locale of SUPPORTED_LOCALES) {
+            if (form.elements[`${name}.${locale}`]) form.elements[`${name}.${locale}`].value = record[name]?.[locale] ?? '';
+          }
+        } else if (form.elements[name]) {
+          if (type === 'multiselect' || type === 'multi-reference') {
+            const selected = new Set(record[name] ?? []);
+            for (const option of form.elements[name].options) option.selected = selected.has(option.value);
+          } else {
+            form.elements[name].value = type === 'json' && record[name] != null
+              ? JSON.stringify(record[name])
+              : type === 'tags' && Array.isArray(record[name])
+                ? record[name].join(', ')
+                : (record[name] ?? '');
+          }
         }
       }
       details.querySelector('summary').textContent = 'Modifier l’élément';
@@ -1900,6 +1987,9 @@ async function route() {
       const body = Object.fromEntries(
         [...new FormData(form).entries()].filter(([, value]) => value !== '')
       );
+      for (const field of ['latitude', 'longitude']) {
+        if (body[field] !== undefined) body[field] = Number(body[field]);
+      }
       const button = form.querySelector('button[type="submit"]');
       button.disabled = true;
       button.textContent = 'Chargement…';

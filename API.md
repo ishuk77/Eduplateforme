@@ -12,6 +12,10 @@
 `POST /auth/register` crée une personne et un compte sans organisation.
 `POST /auth/onboarding`, appelé avec le jeton d’accès obtenu, crée la première
 organisation, rattache le compte et attribue le rôle administrateur tenant.
+La référence interne de l’organisation est générée côté serveur lorsqu’elle est
+omise. Les types principaux sont `school`, `university`, `higher-education` et
+`training-center`; le fuseau IANA, le format de date et les coordonnées
+facultatives sont validés.
 Les réponses d’authentification n’exposent jamais le jeton de renouvellement
 dans le JSON. Il est déposé uniquement dans un cookie `HttpOnly`,
 `SameSite=Strict` (`Secure` en production). `POST /auth/refresh` et
@@ -78,6 +82,19 @@ organisation et, facultativement, par campus.
 - `DELETE /people/:id` (archive)
 - `GET /people/:id/history`
 
+### Imports CSV/XLSX
+
+- `GET /imports/schema`
+- `GET /imports/templates/:kind`
+- `POST /imports/preview`
+- `POST /imports/apply`
+
+`people` est le workflow unifié pour apprenants, responsables et professionnels.
+`references` importe les colonnes
+`catalog,code,labelFr,labelEn,labelEs,labelPt,labelAr,countryCode`. Tous les lots
+sont prévisualisés, tenant-scoped, transactionnels et idempotents. Les
+identifiants temporaires ne sont retournés qu’à la première application.
+
 ### Accounts
 - `POST /accounts`
 - `GET /accounts`
@@ -119,6 +136,11 @@ organisation et, facultativement, par campus.
 - `GET /academics/lifecycle-events`
 - `GET /academics/lifecycle-events/:id`
 - `GET /academics/lifecycle-events/:id/history`
+
+Le code d’année est généré depuis les dates lorsqu’il est omis. Une période
+porte une `sequence` positive unique et ses dates doivent être contenues dans
+l’année. Une classe utilise `name` comme libellé affiché et `code` comme
+identifiant stable.
 
 `Subject` décrit la matière; `Course` l’instancie pour une période, un groupe
 ou programme et des affectations enseignantes. Le journal longitudinal accepte
@@ -205,6 +227,15 @@ universel. Une transmission sans transport injecté reste
 - `DELETE /attendance/records/:id` (archive)
 - `GET /attendance/records/:id/history`
 - `GET /attendance/rate?organizationId=<orgId>&learnerId=<learnerId>`
+
+### Activation académique par paiement
+
+Les configurations de frais acceptent `programId`, `accessPolicy`
+(`no_payment_required`, `registration_fee_paid`, `minimum_percentage`,
+`minimum_amount`, `fully_paid`), les seuils correspondants et `freeTraining`.
+Le tableau de bord et les routes LMS de l’apprenant appliquent cette politique
+côté serveur; les rôles d’administration et d’enseignement restent régis par
+leurs permissions.
 
 ### Scheduling
 - `POST /scheduling/entries`

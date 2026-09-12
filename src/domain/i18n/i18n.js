@@ -3,7 +3,7 @@ import { SUPPORTED_LANGUAGES, SUPPORTED_CURRENCIES } from '../../shared/constant
 import { ValidationError } from '../../shared/errors.js';
 
 export class LocalizationProfile extends Entity {
-  constructor({ id, organizationId, userId = null, countryCode, city, language = 'fr', currency = 'USD', timezone = 'UTC', dateFormat = 'YYYY-MM-DD', calendar = 'gregory', numberingSystem = null }) {
+  constructor({ id, organizationId, userId = null, countryCode, city, language = 'fr', currency = 'USD', timezone = 'UTC', dateFormat = 'YYYY-MM-DD', calendar = 'gregory', numberingSystem = null, latitude = null, longitude = null }) {
     super({ id });
     this.organizationId = assertRequiredString(organizationId, 'organizationId');
     this.countryCode = assertRequiredString(countryCode, 'countryCode');
@@ -19,9 +19,24 @@ export class LocalizationProfile extends Entity {
     this.language = language;
     this.currency = currency;
     this.timezone = assertRequiredString(timezone, 'timezone');
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: this.timezone }).format();
+    } catch {
+      throw new ValidationError('timezone must be a valid IANA time zone.');
+    }
+    if (!['YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY', 'DD.MM.YYYY'].includes(dateFormat)) {
+      throw new ValidationError('Unsupported dateFormat.');
+    }
     this.dateFormat = assertRequiredString(dateFormat, 'dateFormat');
     this.calendar = assertRequiredString(calendar, 'calendar');
     this.numberingSystem = numberingSystem;
     this.userId = userId;
+    this.latitude = latitude === null || latitude === '' ? null : Number(latitude);
+    this.longitude = longitude === null || longitude === '' ? null : Number(longitude);
+    if ((this.latitude === null) !== (this.longitude === null)
+      || (this.latitude !== null && (!Number.isFinite(this.latitude) || this.latitude < -90 || this.latitude > 90))
+      || (this.longitude !== null && (!Number.isFinite(this.longitude) || this.longitude < -180 || this.longitude > 180))) {
+      throw new ValidationError('latitude and longitude must be valid and provided together.');
+    }
   }
 }

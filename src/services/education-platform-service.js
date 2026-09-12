@@ -920,8 +920,28 @@ export class EducationPlatformService extends FoundationService {
 
   createAcademicPeriod(input, actorId = null) {
     this.assertOrganizationContext(input.organizationId);
-    this.assertTenantRecord(this.academicYears, input.academicYearId, input.organizationId, 'academic year');
-    const period = new AcademicPeriod(input);
+    const academicYear = this.assertTenantRecord(this.academicYears, input.academicYearId, input.organizationId, 'academic year');
+    const existingPeriods = [...this.academicPeriods.values()].filter((item) =>
+      item.organizationId === input.organizationId
+      && item.academicYearId === input.academicYearId
+      && item.status !== 'archived'
+    );
+    const period = new AcademicPeriod({
+      ...input,
+      sequence: input.sequence ?? Math.max(0, ...existingPeriods.map((item) => Number(item.sequence) || 0)) + 1
+    });
+    if (Date.parse(period.startsOn) < Date.parse(academicYear.startsOn)
+      || Date.parse(period.endsOn) > Date.parse(academicYear.endsOn)) {
+      throw new ValidationError('Academic period dates must be contained within the academic year.');
+    }
+    if (existingPeriods.some((item) =>
+      item.organizationId === period.organizationId
+      && item.academicYearId === period.academicYearId
+      && item.sequence === period.sequence
+      && item.status !== 'archived'
+    )) {
+      throw new ValidationError('Academic period sequence must be unique within the academic year.');
+    }
     this.academicPeriods.set(period.id, period);
     this.recordEvent('academic-period.created', period, actorId);
     return period;
@@ -1298,6 +1318,7 @@ export class EducationPlatformService extends FoundationService {
 
   configureFee(input, actorId = null) {
     this.assertOrganizationContext(input.organizationId);
+    if (input.programId) this.assertTenantRecord(this.programs, input.programId, input.organizationId, 'program');
     const fee = new FeeConfiguration(input);
     this.fees.set(fee.id, fee);
     this.recordEvent('finance.fee.configured', fee, actorId);

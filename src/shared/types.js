@@ -22,16 +22,20 @@ export const registrationSchema = z.object({
 export const onboardingSchema = z.object({
   legalName: z.string().trim().min(2, 'legalName is required'),
   displayName: z.string().trim().min(2, 'displayName is required'),
-  internalReference: z.string().trim().min(2, 'internalReference is required'),
+  internalReference: z.string().trim().min(2).optional().nullable(),
   countryCode: z.string().trim().length(2, 'countryCode must contain 2 characters'),
   locale: z.enum(['fr', 'en', 'es', 'pt', 'ar']).default('fr'),
-  organizationType: z.string().trim().min(1).default('institution'),
+  organizationType: z.enum(['school', 'university', 'higher-education', 'training-center']).default('school'),
   nationalInstitutionId: z.string().trim().min(1).optional().nullable(),
   legalForm: z.string().trim().min(1).optional().nullable(),
   registrationNumber: z.string().trim().min(1).optional().nullable(),
   taxIdentifier: z.string().trim().min(1).optional().nullable(),
   administrativeAuthority: z.string().trim().min(1).optional().nullable(),
-  operationalStatus: z.string().trim().min(1).default('operational'),
+  operationalStatus: z.enum(['pending', 'operational', 'suspended', 'closed']).default('operational'),
+  timezone: z.string().trim().min(1).default('UTC'),
+  dateFormat: z.enum(['YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY', 'DD.MM.YYYY']).default('YYYY-MM-DD'),
+  latitude: z.coerce.number().min(-90).max(90).optional().nullable(),
+  longitude: z.coerce.number().min(-180).max(180).optional().nullable(),
   headquartersAddress: z.record(z.string(), z.unknown()).default({}),
   officialContact: z.record(z.string(), z.unknown()).default({})
 });

@@ -1,5 +1,6 @@
 import {
   Entity,
+  ValidationError,
   assertOptionalString,
   assertPlainObject,
   assertRequiredString
@@ -34,6 +35,9 @@ export class AcademicYear extends Entity {
     this.name = assertRequiredString(name, 'name');
     this.startsOn = startsOn;
     this.endsOn = endsOn;
+    if (!startsOn || Number.isNaN(Date.parse(startsOn))) throw new ValidationError('startsOn must be a valid date.');
+    if (!endsOn || Number.isNaN(Date.parse(endsOn))) throw new ValidationError('endsOn must be a valid date.');
+    if (Date.parse(endsOn) <= Date.parse(startsOn)) throw new ValidationError('endsOn must be after startsOn.');
     this.calendarSystem = assertRequiredString(calendarSystem, 'calendarSystem');
   }
 }

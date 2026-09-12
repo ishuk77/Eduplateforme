@@ -65,9 +65,35 @@ function registerCrud(router, service, [path, resource, permission]) {
       ...parsePagination(url)
     })
   });
+  const assertListAccess = (request, url) => {
+    if (permission !== 'lms') return;
+    const { identity, scoped } = organizationId(request, service, url.searchParams.get('organizationId'));
+    if (identity.permissions.includes('*') || identity.permissions.includes('lms.write')) return;
+    const access = service.getAcademicAccessForAccount(identity.accountId, scoped);
+    if (!access.active) {
+      throw new ApiError('PAYMENT_REQUIRED', 'Academic content is pending the configured payment requirement.', 403);
+    }
+  };
+  const list = async (request, url, params) => {
+    assertListAccess(request, url);
+    return handlers.list(request, url, params);
+  };
+  const get = async (request, url, params) => {
+    if (permission === 'lms') {
+      const record = await service.getCrudResource(resource, params.id);
+      const identity = requireIdentity(request, service);
+      if (!identity.permissions.includes('*') && !identity.permissions.includes('lms.write')) {
+        const access = service.getAcademicAccessForAccount(identity.accountId, record.organizationId);
+        if (!access.active) {
+          throw new ApiError('PAYMENT_REQUIRED', 'Academic content is pending the configured payment requirement.', 403);
+        }
+      }
+    }
+    return handlers.get(request, url, params);
+  };
   if (!WORKFLOW_MANAGED_RESOURCES.has(resource)) router.add('POST', path, handlers.create);
-  router.add('GET', path, handlers.list);
-  router.add('GET', `${path}/:id`, handlers.get);
+  router.add('GET', path, list);
+  router.add('GET', `${path}/:id`, get);
   if (!WORKFLOW_MANAGED_RESOURCES.has(resource)) {
     router.add('PUT', `${path}/:id`, handlers.update);
     router.add('DELETE', `${path}/:id`, handlers.remove);
@@ -82,6 +108,10 @@ function assertEnrollmentAccess(service, identity, enrollment) {
   const accountPersonId = service.accounts.get(identity.accountId)?.personId;
   if (!participant || participant.personId !== accountPersonId) {
     throw new ApiError('FORBIDDEN', 'Learners can only access their own LMS enrollment.', 403);
+  }
+  const access = service.getAcademicAccessForAccount(identity.accountId, enrollment.organizationId);
+  if (!access.active) {
+    throw new ApiError('PAYMENT_REQUIRED', 'Academic content is pending the configured payment requirement.', 403, { academicAccess: access });
   }
 }
 

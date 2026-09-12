@@ -19,7 +19,8 @@ function assertImportRequestSize(request) {
 }
 
 function importPermissions(kind) {
-  return kind === 'staff'
+  if (kind === 'references') return ['references.write'];
+  return kind === 'staff' || kind === 'people'
     ? ['academics.write', 'people.write', 'profiles.write', 'accounts.write']
     : ['academics.write', 'people.write', 'accounts.write'];
 }
