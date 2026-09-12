@@ -200,6 +200,21 @@ export function registerOperationsRoutes(router, { service }) {
     return Response.json(await service.requestBackup(body, identity.actorId), { status: 202 });
   });
 
+  router.add('POST', '/operations/demo-accounts/provision', async (request) => {
+    const body = await parseJson(request);
+    const identity = authorizeRequest(request, service, {
+      organizationId: body.organizationId,
+      permissions: ['accounts.write', 'people.write']
+    });
+    if (!service.getRoleCodes(identity.accountId, body.organizationId).includes('tenant-admin')) {
+      throw new ApiError('FORBIDDEN', 'Only a tenant administrator can provision preview accounts.', 403);
+    }
+    return Response.json(
+      await service.provisionPreviewAccounts(body.organizationId, identity.accountId),
+      { status: 201 }
+    );
+  });
+
   router.add('POST', '/ai/assist', async (request) => {
     const body = await parseJson(request);
     const identity = authorizeRequest(request, service, {

@@ -31,6 +31,12 @@ L’application réutilise une personne du tenant par courriel, un apprenant par
 
 Audit, qualité des données, EMIS, sécurité, abonnements, support et exploitation sont réservés aux permissions correspondantes. Les opérations externes restent explicitement signalées comme telles. Les actions officielles, dont les imports, ne sont jamais placées dans la file hors ligne.
 
+### Comptes de démonstration des rôles
+
+Un administrateur du tenant peut appeler une fois `POST /operations/demo-accounts/provision` avec `{"organizationId":"<tenant-id>"}` et son jeton Bearer. L’opération crée ou réutilise les personnes, comptes, rôles à privilèges minimaux et affectations `learner`, `student`, `teacher` et `platform-admin`. Même `platform-admin` reste limité au tenant indiqué.
+
+Les mots de passe temporaires sont générés côté serveur, stockés uniquement sous forme de hash et renvoyés en clair seulement lors de la création initiale dans `credentials`. Un nouvel appel est sans effet et renvoie `credentials: []`. Chaque compte impose le changement du mot de passe à la première connexion. Cette route est authentifiée et exclusivement réservée au rôle `tenant-admin`; elle ne constitue pas une valeur par défaut publique.
+
 ## Identité visuelle et signatures
 
 - Le logo institutionnel est configuré par tenant dans **Identité & preuves**. Seuls PNG et JPEG cohérents avec leur contenu sont acceptés, jusqu’à 1 Mio et 4096×4096 pixels. Le remplacement et la suppression sont audités; les SVG actifs sont refusés.
