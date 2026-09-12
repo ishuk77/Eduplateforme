@@ -943,8 +943,8 @@ function authForm(kind) {
       <a class="brand-mark public-brand" href="/">Eduplateforme</a>
       <section class="auth-card surface-card">
         <p class="section-label">${registration ? 'Créer un compte' : 'Bon retour'}</p>
-        <h1>${registration ? 'Commencez avec votre école' : 'Connectez-vous'}</h1>
-        <p class="section-copy">${registration ? 'Votre compte sera administrateur de l’établissement créé à l’étape suivante.' : 'Accédez aux données réelles de votre établissement.'}</p>
+        <h1>${registration ? 'Créez votre compte administrateur' : 'Connectez-vous'}</h1>
+        <p class="section-copy">${registration ? 'Après connexion, vous pourrez créer une école, une université/institution supérieure ou un centre de formation.' : 'Accédez aux données réelles de votre établissement.'}</p>
         <div id="feedback" class="feedback" role="alert" tabindex="-1" hidden></div>
         <form id="auth-form" class="form-grid">
           ${registration ? `
@@ -977,7 +977,7 @@ function landing() {
           <h1>Une école organisée, des données utiles, des actions traçables.</h1>
           <p>Eduplateforme réunit inscriptions, personnes, calendrier, communications, bulletins, documents et gouvernance dans un espace sécurisé.</p>
           <div class="hero-actions">
-            <a class="primary-button" href="/register">Créer mon école</a>
+            <a class="primary-button" href="/register">Créer mon compte administrateur</a>
             <a class="secondary-button" href="/login">J’ai déjà un compte</a>
             <a class="secondary-button" href="/verify-institution">Vérifier une institution</a>
             <a class="secondary-button" href="/verify-credential">Vérifier un diplôme</a>
