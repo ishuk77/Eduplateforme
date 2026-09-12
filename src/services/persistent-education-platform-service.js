@@ -138,6 +138,7 @@ const COLLECTIONS = {
   domainQuotes: { hydrate: (value) => new PlatformRecord(value) },
   domainOrders: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
   domainLifecycleEvents: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
+  domainResellerIncidents: { hydrate: (value) => new PlatformRecord(value) },
   reportCards: { hydrate: (value) => new ReportCard(value) },
   fees: { hydrate: (value) => new FeeConfiguration(value, { validate: false }) },
   invoices: { hydrate: (value) => new Invoice(value) },
@@ -245,6 +246,7 @@ const RESOURCE_TO_COLLECTION = {
   domainQuotes: 'domainQuotes',
   domainOrders: 'domainOrders',
   domainLifecycleEvents: 'domainLifecycleEvents',
+  domainResellerIncidents: 'domainResellerIncidents',
   scheduleEntries: 'scheduleEntries',
   notifications: 'notifications',
   virtualSchools: 'virtualSchools',
@@ -1896,6 +1898,74 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     return { items, page: { total: items.length, limit: items.length, offset: 0 } };
   }
 
+  listEnabledDomainOffers() {
+    const { items } = this.listDomainTldCatalog({ enabledOnly: true });
+    return {
+      items: items.map((entry) => ({
+        id: entry.id,
+        tld: entry.tld,
+        currency: entry.currency,
+        registrationPrice: entry.registrationPrice,
+        renewalPrice: entry.renewalPrice,
+        transferPrice: entry.transferPrice,
+        effectiveFrom: entry.effectiveFrom,
+        effectiveUntil: entry.effectiveUntil
+      })),
+      page: { total: items.length, limit: items.length, offset: 0 }
+    };
+  }
+
+  createDomainResellerIncident(input, actorId = null) {
+    if (!String(input.title ?? '').trim()) throw new ValidationError('title is required.');
+    if (!['low', 'medium', 'high', 'critical'].includes(input.severity)) {
+      throw new ValidationError('severity must be low, medium, high, or critical.');
+    }
+    const record = new PlatformRecord({
+      id: createPermanentId(),
+      organizationId: input.organizationId ?? null,
+      title: String(input.title).slice(0, 200),
+      severity: input.severity,
+      incidentState: input.incidentState ?? 'open',
+      publicMessage: String(input.publicMessage ?? '').slice(0, 500),
+      orderId: input.orderId ?? null
+    });
+    return this.transactional(() =>
+      this.recordCreate('domainResellerIncidents', record, actorId, 'domain.incident.create'));
+  }
+
+  listDomainResellerIncidents() {
+    const items = [...this.domainResellerIncidents.values()]
+      .filter((entry) => entry.status !== 'archived');
+    return { items, page: { total: items.length, limit: items.length, offset: 0 } };
+  }
+
+  async getDomainResellerAudit({ limit = 100, offset = 0 } = {}) {
+    const normalizedLimit = Math.max(1, Math.min(200, Number(limit) || 100));
+    const normalizedOffset = Math.max(0, Number(offset) || 0);
+    const rows = await this.connection.all(
+      `SELECT id, organization_id, actor_id, entity_type, entity_id, action,
+              reason, created_at
+       FROM audit_trail
+       WHERE action LIKE 'domain.%' OR action LIKE 'platform.custom-domain.%'
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`,
+      [normalizedLimit, normalizedOffset]
+    );
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        organizationId: row.organization_id,
+        actorId: row.actor_id,
+        entityType: row.entity_type,
+        entityId: row.entity_id,
+        action: row.action,
+        reason: row.reason ?? null,
+        timestamp: row.created_at
+      })),
+      page: { total: rows.length, limit: normalizedLimit, offset: normalizedOffset }
+    };
+  }
+
   async quoteDomain(input, actorId = null) {
     this.assertOrganizationContext(input.organizationId);
     const domain = normalizeCustomDomain(input.domain, process.env.RENDER_EXTERNAL_HOSTNAME);
@@ -2831,6 +2901,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       organizationId,
       organizationIds: account.organizationIds,
       permissions: this.getAccountPermissions(account.id, organizationId),
+      roles: organizationId ? this.getRoleCodes(account.id, organizationId) : [],
       profile: person ? { givenName: person.givenName, familyName: person.familyName } : null,
       locale: account.metadata?.locale ?? person?.preferredLocale ?? null,
       organization: organizationId ? (() => {

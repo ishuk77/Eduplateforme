@@ -35,6 +35,25 @@ async function createTenant(service, suffix) {
   return { ...onboarding, account: registration.account, token: session.accessToken };
 }
 
+async function addRole(service, tenant, code) {
+  let role = [...service.roles.values()].find((entry) => entry.code === code);
+  if (!role) {
+    role = await service.createRole({
+      code,
+      name: code,
+      scope: 'organization',
+      permissions: []
+    }, 'bootstrap');
+  }
+  await service.assignRole({
+    personId: tenant.person.id,
+    roleId: role.id,
+    organizationId: tenant.organization.id
+  }, 'bootstrap');
+  const session = await service.createAuthenticationSession(tenant.account, tenant.organization.id);
+  return session.accessToken;
+}
+
 async function seedQuote(service, organizationId, suffix = 'one') {
   await service.upsertDomainTld({
     tld: 'org',
@@ -206,7 +225,7 @@ test('renewal notices use 60, 30, 15 and 7 day milestones without duplication', 
   }
 });
 
-test('tenant order routes enforce isolation and platform provider status rejects tenant admins', async () => {
+test('tenant and platform routes enforce role separation, isolation, safe summaries and legacy redirects', async () => {
   const service = createPersistentEducationPlatformService({
     databaseUrl: 'sqlite::memory:',
     domainProvider: new FakeDomainProvider()
@@ -214,19 +233,96 @@ test('tenant order routes enforce isolation and platform provider status rejects
   try {
     const first = await createTenant(service, 'First');
     const second = await createTenant(service, 'Second');
+    const platform = await createTenant(service, 'Platform');
+    const platformToken = await addRole(service, platform, 'platform-admin');
     const quote = await seedQuote(service, first.organization.id, 'isolated');
     await service.createDomainOrder(orderInput(first.organization.id, quote, 'isolated'), first.account.id);
     const app = createApp({ foundation: service });
     const crossTenant = await app(new Request(
-      `https://eduplateforme.test/domain-reseller/orders?organizationId=${first.organization.id}`,
+      `https://eduplateforme.test/domain-subscription/orders?organizationId=${first.organization.id}`,
       { headers: { authorization: `Bearer ${second.token}` } }
     ));
     assert.equal(crossTenant.status, 403);
     const providerStatus = await app(new Request(
-      'https://eduplateforme.test/domain-reseller/provider',
+      'https://eduplateforme.test/platform/domain-reseller/provider',
       { headers: { authorization: `Bearer ${first.token}` } }
     ));
     assert.equal(providerStatus.status, 403);
+
+    const offersResponse = await app(new Request(
+      `https://eduplateforme.test/domain-subscription/offers?organizationId=${first.organization.id}`,
+      { headers: { authorization: `Bearer ${first.token}` } }
+    ));
+    assert.equal(offersResponse.status, 200);
+    const offers = await offersResponse.json();
+    assert.equal(offers.items[0].registrationPrice, 14);
+    assert.equal(Object.hasOwn(offers.items[0], 'wholesaleCost'), false);
+    assert.equal(Object.hasOwn(offers.items[0], 'margin'), false);
+
+    const tenantDestination = await app(new Request(
+      'https://eduplateforme.test/domain-reseller/destination',
+      { headers: { authorization: `Bearer ${first.token}` } }
+    ));
+    assert.deepEqual(await tenantDestination.json(), { path: '/domain-subscription' });
+    const platformDestination = await app(new Request(
+      'https://eduplateforme.test/domain-reseller/destination',
+      { headers: { authorization: `Bearer ${platformToken}` } }
+    ));
+    assert.deepEqual(await platformDestination.json(), { path: '/platform/domain-reseller' });
+
+    const platformTenantSurface = await app(new Request(
+      `https://eduplateforme.test/domain-subscription/offers?organizationId=${platform.organization.id}`,
+      { headers: { authorization: `Bearer ${platformToken}` } }
+    ));
+    assert.equal(platformTenantSurface.status, 403);
+    const platformProvider = await app(new Request(
+      'https://eduplateforme.test/platform/domain-reseller/provider',
+      { headers: { authorization: `Bearer ${platformToken}` } }
+    ));
+    assert.equal(platformProvider.status, 200);
+    const globalOrdersResponse = await app(new Request(
+      'https://eduplateforme.test/platform/domain-reseller/orders',
+      { headers: { authorization: `Bearer ${platformToken}` } }
+    ));
+    assert.equal(globalOrdersResponse.status, 200);
+    const globalOrders = await globalOrdersResponse.json();
+    assert.equal(globalOrders.items.length, 1);
+    assert.equal(Object.hasOwn(globalOrders.items[0], 'registrant'), false);
+    const incidentResponse = await app(new Request(
+      'https://eduplateforme.test/platform/domain-reseller/incidents',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${platformToken}`,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ title: 'Registrar delay', severity: 'high' })
+      }
+    ));
+    assert.equal(incidentResponse.status, 201);
+    const tenantIncidentAccess = await app(new Request(
+      'https://eduplateforme.test/platform/domain-reseller/incidents',
+      { headers: { authorization: `Bearer ${first.token}` } }
+    ));
+    assert.equal(tenantIncidentAccess.status, 403);
+    const auditResponse = await app(new Request(
+      'https://eduplateforme.test/platform/domain-reseller/audit',
+      { headers: { authorization: `Bearer ${platformToken}` } }
+    ));
+    assert.equal(auditResponse.status, 200);
+
+    const viewer = await createTenant(service, 'Viewer');
+    for (const assignment of service.roleAssignments.values()) {
+      if (assignment.personId === viewer.person.id && assignment.organizationId === viewer.organization.id) {
+        assignment.status = 'archived';
+      }
+    }
+    const viewerToken = await addRole(service, viewer, 'teacher');
+    const viewerDestination = await app(new Request(
+      'https://eduplateforme.test/domain-reseller/destination',
+      { headers: { authorization: `Bearer ${viewerToken}` } }
+    ));
+    assert.deepEqual(await viewerDestination.json(), { path: '/dashboard' });
   } finally {
     await service.close();
   }
@@ -264,15 +360,41 @@ test('domain reseller catalog and unpaid orders persist in PostgreSQL', async ()
   }
 });
 
-test('domain reseller UI includes accessible controls, help and ownership language', async () => {
+test('domain UI separates platform and tenant controls with localized accessible navigation', async () => {
   const source = await import('node:fs/promises').then(({ readFile }) =>
     readFile(new URL('../../public/app.js', import.meta.url), 'utf8'));
   const styles = await import('node:fs/promises').then(({ readFile }) =>
     readFile(new URL('../../public/styles.css', import.meta.url), 'utf8'));
-  assert.match(source, /Domaines & revente/);
+  const helpSource = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(new URL('../../src/http/routes/operations.js', import.meta.url), 'utf8'));
+  assert.match(source, /Domaine et abonnement/);
+  assert.match(source, /Revente de domaines/);
   assert.match(source, /L’institution est le titulaire/);
   assert.match(source, /aria-live="polite"/);
   assert.match(source, /domain-quote-form/);
   assert.match(source, /dir = state\.locale === 'ar' \? 'rtl'/);
+  assert.match(source, /domainSubscription: \['Domain and subscription'/);
+  assert.match(source, /domainSubscription: \['Dominio y suscripción'/);
+  assert.match(source, /domainSubscription: \['Domínio e subscrição'/);
+  assert.match(source, /domainSubscription: \['النطاق والاشتراك'/);
+  const tenantSurface = source.slice(
+    source.indexOf("if (module.id === 'domainSubscription'"),
+    source.indexOf("if (module.id === 'platformDomainReseller'")
+  );
+  assert.doesNotMatch(tenantSurface, /wholesaleCost|margin|domain-reseller\/provider|platform\/domain-reseller/);
+  assert.match(tenantSurface, /domain-subscription\/offers/);
+  const platformSurface = source.slice(
+    source.indexOf("if (module.id === 'platformDomainReseller'"),
+    source.indexOf("if (module.id === 'attendance'")
+  );
+  assert.match(platformSurface, /wholesaleCost/);
+  assert.match(platformSurface, /domain-reseller\/provider/);
+  assert.match(platformSurface, /domain-reseller\/incidents/);
+  assert.match(platformSurface, /domain-reseller\/audit/);
+  assert.match(source, /path === '\/domain-reseller'/);
+  assert.match(source, /apiRequest\('\/domain-reseller\/destination'\)/);
+  assert.match(source, /platformNavigation = new Set\(\['platformDomainReseller', 'operations', 'audit', 'support'\]\)/);
+  assert.match(helpSource, /id: 'domainSubscription'/);
+  assert.match(helpSource, /id: 'platformDomainReseller'/);
   assert.match(styles, /button, input, select \{ min-height: 44px; \}/);
 });

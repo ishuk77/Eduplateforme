@@ -31,6 +31,8 @@ const translations = {
     dataQuality: ['Data quality', 'Data Quality Center'],
     emis: ['EMIS', 'Interoperability'],
     references: ['Reference data', 'Standards'],
+    domainSubscription: ['Domain and subscription', 'Institution'],
+    platformDomainReseller: ['Domain resale', 'Platform administration'],
     logout: 'Sign out',
     activeOrganization: 'Active organization',
     loading: 'Loading data…',
@@ -40,6 +42,8 @@ const translations = {
     noResults: 'No result has been recorded yet.'
   },
   fr: {
+    domainSubscription: ['Domaine et abonnement', 'Institution'],
+    platformDomainReseller: ['Revente de domaines', 'Administration plateforme'],
     logout: 'Déconnexion',
     activeOrganization: 'Organisation active',
     loading: 'Chargement des données…',
@@ -49,16 +53,22 @@ const translations = {
     noResults: 'Aucun résultat enregistré pour le moment.'
   },
   es: {
+    domainSubscription: ['Dominio y suscripción', 'Institución'],
+    platformDomainReseller: ['Reventa de dominios', 'Administración de plataforma'],
     logout: 'Cerrar sesión', activeOrganization: 'Organización activa', loading: 'Cargando datos…',
     add: 'Añadir', empty: 'Sin datos', emptyHint: 'Cree primero los requisitos indicados.',
     noResults: 'Todavía no hay resultados.'
   },
   pt: {
+    domainSubscription: ['Domínio e subscrição', 'Instituição'],
+    platformDomainReseller: ['Revenda de domínios', 'Administração da plataforma'],
     logout: 'Sair', activeOrganization: 'Organização ativa', loading: 'A carregar dados…',
     add: 'Adicionar', empty: 'Sem dados', emptyHint: 'Crie primeiro os pré-requisitos indicados.',
     noResults: 'Ainda não há resultados.'
   },
   ar: {
+    domainSubscription: ['النطاق والاشتراك', 'المؤسسة'],
+    platformDomainReseller: ['إعادة بيع النطاقات', 'إدارة المنصة'],
     logout: 'تسجيل الخروج', activeOrganization: 'المؤسسة النشطة', loading: 'جارٍ تحميل البيانات…',
     add: 'إضافة', empty: 'لا توجد بيانات', emptyHint: 'أنشئ المتطلبات الأساسية أولاً.',
     noResults: 'لا توجد نتائج حتى الآن.'
@@ -728,12 +738,22 @@ const modules = [
     ]
   },
   {
-    id: 'domainReseller',
-    path: '/domain-reseller',
-    label: 'Domaines & revente',
-    eyebrow: 'Abonnements et domaines',
-    description: 'Commandez ou reliez un domaine sans confondre abonnement SaaS, propriété du domaine et étapes de provisionnement.',
+    id: 'domainSubscription',
+    path: '/domain-subscription',
+    label: 'Domaine et abonnement',
+    eyebrow: 'Institution',
+    description: 'Gérez le plan, le domaine et les droits de votre institution.',
     navigationPermission: 'saas.read',
+    audience: 'tenant-admin',
+    resources: []
+  },
+  {
+    id: 'platformDomainReseller',
+    path: '/platform/domain-reseller',
+    label: 'Revente de domaines',
+    eyebrow: 'Administration plateforme',
+    description: 'Supervisez le fournisseur, les prix, les commandes, les incidents et l’audit.',
+    audience: 'platform-admin',
     resources: []
   },
   {
@@ -938,6 +958,16 @@ function can(permission) {
   return !permission || state.user?.permissions?.includes('*') || state.user?.permissions?.includes(permission);
 }
 
+function hasRole(role) {
+  return state.user?.roles?.includes(role) ?? false;
+}
+
+function isInstitutionAdmin() {
+  return state.user?.roles?.some((role) =>
+    ['tenant-admin', 'school-admin', 'university-admin', 'training-center-admin'].includes(role)
+  ) ?? false;
+}
+
 function notification(message, type = 'success') {
   const region = document.querySelector('#feedback');
   if (!region) return;
@@ -1040,15 +1070,23 @@ function onboarding() {
 
 function shell(content, activeId = 'dashboard') {
   const profile = state.user?.profile;
+  const platformAdmin = hasRole('platform-admin');
+  const platformNavigation = new Set(['platformDomainReseller', 'operations', 'audit', 'support']);
   const navigationGroups = [
     { label: 'Configuration', ids: ['organizations', 'institution', 'i18n', 'references', 'academics', 'people', 'profiles'] },
     { label: 'Opérations quotidiennes', ids: ['scheduling', 'assignments', 'attendance', 'grading', 'lms', 'virtualSchools', 'finance', 'communications', 'notifications', 'documents', 'reports', 'certificates', 'calendar', 'discipline', 'parentalConsents'] },
-    { label: 'Gouvernance & exploitation', ids: ['analytics', 'dataQuality', 'emis', 'meetings', 'saas', 'domainReseller', 'operations', 'ai', 'audit', 'support'] }
+    { label: 'Gouvernance & exploitation', ids: ['analytics', 'dataQuality', 'emis', 'meetings', 'saas', 'domainSubscription', 'platformDomainReseller', 'operations', 'ai', 'audit', 'support'] }
   ];
   const moduleById = new Map(modules.map((module) => [module.id, module]));
   const navigation = navigationGroups.map((group) => {
     const links = group.ids.map((id) => moduleById.get(id))
-      .filter((module) => module && (can(module.navigationPermission) || module.resources.some((resource) => can(resource.read))));
+      .filter((module) => {
+        if (!module) return false;
+        if (platformAdmin && !platformNavigation.has(module.id)) return false;
+        if (module.audience === 'platform-admin' && !hasRole('platform-admin')) return false;
+        if (module.audience === 'tenant-admin' && (!isInstitutionAdmin() || hasRole('platform-admin'))) return false;
+        return can(module.navigationPermission) || module.resources.some((resource) => can(resource.read));
+      });
     if (links.length === 0) return '';
     return `<section class="nav-group"><h2>${group.label}</h2>${links.map((module) => `<a class="nav-link ${activeId === module.id ? 'is-active' : ''}" href="${module.path}"><span>${moduleLabel(module)}</span><small>${moduleLabel(module, 1)}</small></a>`).join('')}</section>`;
   }).join('');
@@ -1062,9 +1100,9 @@ function shell(content, activeId = 'dashboard') {
           <a class="nav-link ${activeId === 'dashboard' ? 'is-active' : ''}" href="/dashboard"><span>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' })}</span><small>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' }, 1)}</small></a>
           ${navigation}
           <a class="nav-link ${activeId === 'myProfile' ? 'is-active' : ''}" href="/profile"><span>Mon profil</span><small>Préférences et confidentialité</small></a>
-          ${can('organizations.write') || can('credentials.write') || can('documents.write') ? `<a class="nav-link ${activeId === 'identityAssets' ? 'is-active' : ''}" href="/identity-assets"><span>Identité & preuves</span><small>Logo, signatures, justificatifs</small></a>` : ''}
-          ${can('lms.read') ? `<a class="nav-link ${activeId === 'learningPath' ? 'is-active' : ''}" href="/learning-path"><span>Mon parcours</span><small>Leçons, verrous et titres</small></a>` : ''}
-          ${can('academics.write') && can('people.write') && can('accounts.write') ? `<a class="nav-link ${activeId === 'imports' ? 'is-active' : ''}" href="/imports"><span>Imports CSV/XLSX</span><small>Inscriptions et équipes</small></a>` : ''}
+          ${!platformAdmin && (can('organizations.write') || can('credentials.write') || can('documents.write')) ? `<a class="nav-link ${activeId === 'identityAssets' ? 'is-active' : ''}" href="/identity-assets"><span>Identité & preuves</span><small>Logo, signatures, justificatifs</small></a>` : ''}
+          ${!platformAdmin && can('lms.read') ? `<a class="nav-link ${activeId === 'learningPath' ? 'is-active' : ''}" href="/learning-path"><span>Mon parcours</span><small>Leçons, verrous et titres</small></a>` : ''}
+          ${!platformAdmin && can('academics.write') && can('people.write') && can('accounts.write') ? `<a class="nav-link ${activeId === 'imports' ? 'is-active' : ''}" href="/imports"><span>Imports CSV/XLSX</span><small>Inscriptions et équipes</small></a>` : ''}
           <a class="nav-link ${activeId === 'help' ? 'is-active' : ''}" href="/help"><span>Guide des modules</span><small>Aide contextuelle</small></a>
         </nav>
         <button id="logout" class="logout-button" type="button">${t('logout')}</button>
@@ -1253,19 +1291,13 @@ async function modulePage(module) {
           <div class="data-grid">${domains.items.map((domain) => `<article class="data-card"><h3>${escapeHtml(domain.domain)}</h3><p>Vérification : <strong>${escapeHtml(domain.verificationState)}</strong> · Accès : <strong>${escapeHtml(domain.accessState)}</strong></p><p><code>${escapeHtml(domain.instructions?.recordType)} ${escapeHtml(domain.instructions?.name)} = ${escapeHtml(domain.instructions?.value)}</code></p><p>${escapeHtml(domain.instructions?.note)}</p>${can('organizations.write') ? `<button class="secondary-button" type="button" data-domain-verify="${escapeHtml(domain.id)}">Vérifier maintenant</button>` : ''}</article>`).join('') || '<p class="empty-state">Aucun domaine configuré.</p>'}</div>
         </section>`;
     }
-    if (module.id === 'domainReseller' && can('saas.read')) {
-      const [catalog, orders, provider] = await Promise.all([
-        apiRequest('/domain-reseller/catalog').catch((error) => ({ items: [], error: error.message })),
-        apiRequest(`/domain-reseller/orders?organizationId=${encodeURIComponent(state.user.organizationId)}`)
-          .catch((error) => ({ items: [], error: error.message })),
-        apiRequest('/domain-reseller/provider').catch(() => null)
+    if (module.id === 'domainSubscription' && isInstitutionAdmin() && !hasRole('platform-admin')) {
+      const [catalog, orders, subscriptions, domains] = await Promise.all([
+        apiRequest(`/domain-subscription/offers?organizationId=${encodeURIComponent(state.user.organizationId)}`).catch((error) => ({ items: [], error: error.message })),
+        apiRequest(`/domain-subscription/orders?organizationId=${encodeURIComponent(state.user.organizationId)}`).catch((error) => ({ items: [], error: error.message })),
+        apiRequest(`/saas/subscriptions?organizationId=${encodeURIComponent(state.user.organizationId)}&limit=100`).catch(() => ({ items: [] })),
+        apiRequest(`/domains?organizationId=${encodeURIComponent(state.user.organizationId)}`).catch(() => ({ items: [] }))
       ]);
-      const [platformCatalog, platformOrders] = provider
-        ? await Promise.all([
-            apiRequest('/platform/domain-reseller/catalog').catch(() => ({ items: [] })),
-            apiRequest('/platform/domain-reseller/orders').catch(() => ({ items: [] }))
-          ])
-        : [{ items: [] }, { items: [] }];
       const timeline = ['payment_pending', 'domain_pending', 'dns_pending', 'tls_pending', 'active'];
       supplement = `
         <section class="surface-card resource-section" aria-labelledby="domain-plans-title">
@@ -1275,11 +1307,17 @@ async function modulePage(module) {
             <article class="metric-card"><span>Professional</span><strong>Domaine existant</strong><small>Vérification DNS et TLS externe.</small></article>
             <article class="metric-card"><span>Premium</span><strong>Domaine géré</strong><small>Institution propriétaire; renouvellement annuel séparé.</small></article>
           </div>
-          <p>L’institution est le titulaire du domaine. Eduplateforme agit comme revendeur et gestionnaire technique, sans verrouillage. L’annulation du SaaS ne supprime pas les droits de transfert ni la période de grâce des données.</p>
+          <p>L’institution est le titulaire du domaine. Eduplateforme fournit la gestion technique, sans verrouillage. L’annulation du SaaS ne supprime pas les droits de transfert ni la période de grâce des données.</p>
+          <p>Abonnement actuel : <strong>${escapeHtml(subscriptions.items[0]?.subscriptionState ?? 'non configuré')}</strong>.</p>
+        </section>
+        <section class="surface-card resource-section">
+          <p class="section-label">Domaine existant</p><h2>Associer un domaine déjà détenu</h2>
+          ${can('organizations.write') ? `<form id="domain-form" class="form-grid"><label class="form-wide">Domaine existant<input name="domain" required placeholder="campus.example.edu"></label><button class="primary-button" type="submit">Préparer la vérification DNS</button></form>` : ''}
+          <div class="data-grid">${domains.items.map((domain) => `<article class="data-card"><strong>${escapeHtml(domain.domain)}</strong><p>DNS : ${escapeHtml(domain.verificationState)} · accès : ${escapeHtml(domain.accessState)}</p>${can('organizations.write') ? `<button class="secondary-button" type="button" data-domain-verify="${escapeHtml(domain.id)}">Vérifier maintenant</button>` : ''}</article>`).join('') || '<p class="empty-state">Aucun domaine existant associé.</p>'}</div>
         </section>
         <section class="surface-card resource-section">
           <p class="section-label">Recherche et devis</p><h2>Vérifier un domaine</h2>
-          <p>Le fournisseur parrain sera indiqué avant commande. Si l’intégration est désactivée, aucune disponibilité ni transaction n’est simulée.</p>
+          <p>Le bureau d’enregistrement parrain sera indiqué avant commande. Si la connexion externe est indisponible, aucune disponibilité ni transaction n’est simulée.</p>
           <form id="domain-quote-form" class="form-grid">
             <label class="form-wide">Domaine souhaité<input name="domain" required placeholder="mon-institution.org"></label>
             <button class="primary-button" type="submit">Obtenir un devis</button>
@@ -1292,7 +1330,18 @@ async function modulePage(module) {
           <p class="section-label">Commandes</p><h2>Provisionnement et droits de transfert</h2>
           <div class="data-grid">${orders.items.map((order) => `<article class="data-card"><h3>${escapeHtml(order.domain)}</h3><p>${order.lineItems.map((line) => `${escapeHtml(line.description)} : ${formatValue(line.amount)} ${escapeHtml(line.currency)}`).join('<br>')}</p><p><strong>${escapeHtml(order.timelineState)}</strong> · ${timeline.map((step) => `<span aria-label="${step === order.timelineState ? 'étape actuelle' : 'étape'}">${escapeHtml(step)}</span>`).join(' → ')}</p><p>Renouvellement : ${order.autoRenew ? 'automatique' : 'manuel'} · Prix annoncé : ${formatValue(order.lineItems.find((line) => line.type === 'domain_registration')?.renewalAmount)} ${escapeHtml(order.lineItems[0]?.currency)}</p>${can('saas.write') ? `<div class="row-actions"><button type="button" data-domain-renew-toggle="${escapeHtml(order.id)}" data-enabled="${order.autoRenew ? 'false' : 'true'}">${order.autoRenew ? 'Désactiver' : 'Activer'} le renouvellement automatique</button><button type="button" data-domain-renew-request="${escapeHtml(order.id)}">Demander le renouvellement</button><button type="button" data-domain-transfer="${escapeHtml(order.id)}" data-domain="${escapeHtml(order.domain)}">Demander le transfert</button><button type="button" data-domain-cancel="${escapeHtml(order.id)}" data-domain="${escapeHtml(order.domain)}">Résilier la gestion</button></div>` : ''}</article>`).join('') || `<p class="empty-state">${escapeHtml(orders.error ?? 'Aucune commande.')}</p>`}</div>
         </section>
-        ${provider ? `<section class="surface-card resource-section">
+      `;
+    }
+    if (module.id === 'platformDomainReseller' && hasRole('platform-admin')) {
+      const [provider, platformCatalog, platformOrders, incidents, audit] = await Promise.all([
+        apiRequest('/platform/domain-reseller/provider'),
+        apiRequest('/platform/domain-reseller/catalog'),
+        apiRequest('/platform/domain-reseller/orders'),
+        apiRequest('/platform/domain-reseller/incidents'),
+        apiRequest('/platform/domain-reseller/audit?limit=100')
+      ]);
+      supplement = `
+        <section class="surface-card resource-section">
           <p class="section-label">Administration plateforme</p><h2>Fournisseur registrar</h2>
           <p>Mode : <strong>${escapeHtml(provider.provider)}</strong> · environnement : ${escapeHtml(provider.environment)} · achats live : ${provider.livePurchasingEnabled ? 'activés' : 'désactivés'}</p>
           <p>Identifiants : ${escapeHtml(provider.credentials?.masked ?? 'non configurés')} · Solde : ${provider.balance ? `${formatValue(provider.balance.amount)} ${escapeHtml(provider.balance.currency)}` : 'non communiqué'} · Seuil bas : ${formatValue(provider.lowBalanceThreshold)}</p>
@@ -1307,8 +1356,15 @@ async function modulePage(module) {
           </form>
           <div class="data-grid">${platformCatalog.items.map((item) => `<article class="data-card"><strong>.${escapeHtml(item.tld)}</strong><p>Coût ${formatValue(item.wholesaleCost)} · Vente ${formatValue(item.salePrice)} · Marge ${formatValue(item.margin)} ${escapeHtml(item.currency)} · effet ${escapeHtml(item.effectiveFrom)}</p></article>`).join('') || '<p class="empty-state">Aucun tarif.</p>'}</div>
           <h3>Réconciliation des commandes</h3>
-          <div class="data-grid">${platformOrders.items.map((order) => `<article class="data-card"><strong>${escapeHtml(order.domain)}</strong><p>${escapeHtml(order.organizationId)} · paiement ${escapeHtml(order.paymentState)} · cycle ${escapeHtml(order.lifecycleState)} · fournisseur ${escapeHtml(order.providerReference ?? 'sans référence')}</p><p>${escapeHtml(order.lastError ?? 'Aucune erreur')}</p><div class="row-actions">${order.paymentState !== 'paid' ? `<button type="button" data-domain-payment="${escapeHtml(order.id)}">Confirmer paiement</button>` : ''}${order.paymentState === 'paid' && !order.providerReference ? `<button type="button" data-domain-register="${escapeHtml(order.id)}">Soumettre inscription</button>` : ''}<button type="button" data-domain-reconcile="${escapeHtml(order.id)}">Réconcilier</button></div></article>`).join('') || '<p class="empty-state">Aucune commande.</p>'}</div>
-        </section>` : ''}
+          <div class="data-grid">${platformOrders.items.map((order) => `<article class="data-card"><strong>${escapeHtml(order.domain)}</strong><p>${escapeHtml(order.organizationId)} · paiement ${escapeHtml(order.paymentState)} · cycle ${escapeHtml(order.lifecycleState)} · fournisseur ${escapeHtml(order.providerReference ?? 'sans référence')}</p><p>DNS ${escapeHtml(order.dnsState)} · TLS ${escapeHtml(order.tlsState)} · ${escapeHtml(order.lastError ?? 'aucune erreur')}</p><div class="row-actions">${order.paymentState !== 'paid' ? `<button type="button" data-domain-payment="${escapeHtml(order.id)}">Confirmer paiement</button>` : ''}${order.paymentState === 'paid' && !order.providerReference ? `<button type="button" data-domain-register="${escapeHtml(order.id)}">Soumettre inscription</button>` : ''}<button type="button" data-domain-provision="${escapeHtml(order.id)}">DNS/TLS</button><button type="button" data-domain-reconcile="${escapeHtml(order.id)}">Réconcilier</button></div></article>`).join('') || '<p class="empty-state">Aucune commande.</p>'}</div>
+        </section>
+        <section class="surface-card resource-section">
+          <p class="section-label">Incidents et audit</p><h2>Supervision opérationnelle</h2>
+          <form id="domain-incident-form" class="form-grid"><label>Titre<input name="title" required></label><label>Sévérité<select name="severity"><option value="low">Faible</option><option value="medium">Moyenne</option><option value="high">Haute</option><option value="critical">Critique</option></select></label><label class="form-wide">Message opérationnel<textarea name="publicMessage"></textarea></label><button class="primary-button" type="submit">Ouvrir l’incident</button></form>
+          <div class="data-grid">${incidents.items.map((incident) => `<article class="data-card"><strong>${escapeHtml(incident.title)}</strong><p>${escapeHtml(incident.severity)} · ${escapeHtml(incident.incidentState)}</p></article>`).join('') || '<p class="empty-state">Aucun incident de domaine.</p>'}</div>
+          <h3>Dernières actions</h3>
+          <div class="table-scroll"><table><thead><tr><th>Date</th><th>Action</th><th>Institution</th><th>Objet</th></tr></thead><tbody>${audit.items.map((entry) => `<tr><td>${escapeHtml(String(entry.timestamp))}</td><td>${escapeHtml(entry.action)}</td><td>${escapeHtml(entry.organizationId ?? 'plateforme')}</td><td>${escapeHtml(entry.entityId)}</td></tr>`).join('') || '<tr><td colspan="4">Aucune action.</td></tr>'}</tbody></table></div>
+        </section>
       `;
     }
     if (module.id === 'attendance' && can('attendance.write')) {
@@ -1378,7 +1434,7 @@ async function modulePage(module) {
       const result = document.querySelector('#domain-quote-result');
       try {
         const values = Object.fromEntries(new FormData(event.currentTarget));
-        const quote = await apiRequest('/domain-reseller/quotes', {
+        const quote = await apiRequest('/domain-subscription/quotes', {
           method: 'POST',
           body: JSON.stringify({
             ...values,
@@ -1390,7 +1446,7 @@ async function modulePage(module) {
         document.querySelector('#domain-order-form')?.addEventListener('submit', async (orderEvent) => {
           orderEvent.preventDefault();
           const orderValues = Object.fromEntries(new FormData(orderEvent.currentTarget));
-          await apiRequest('/domain-reseller/orders', {
+          await apiRequest('/domain-subscription/orders', {
             method: 'POST',
             body: JSON.stringify({
               organizationId: state.user.organizationId,
@@ -1416,7 +1472,7 @@ async function modulePage(module) {
     });
     document.querySelectorAll('[data-domain-renew-toggle]').forEach((button) => button.addEventListener('click', async () => {
       try {
-        await apiRequest(`/domain-reseller/orders/${button.dataset.domainRenewToggle}/auto-renew`, {
+        await apiRequest(`/domain-subscription/orders/${button.dataset.domainRenewToggle}/auto-renew`, {
           method: 'PUT',
           body: JSON.stringify({ enabled: button.dataset.enabled === 'true' })
         });
@@ -1427,7 +1483,7 @@ async function modulePage(module) {
     }));
     document.querySelectorAll('[data-domain-renew-request]').forEach((button) => button.addEventListener('click', async () => {
       try {
-        await apiRequest(`/domain-reseller/orders/${button.dataset.domainRenewRequest}/renew`, {
+        await apiRequest(`/domain-subscription/orders/${button.dataset.domainRenewRequest}/renew`, {
           method: 'POST',
           body: JSON.stringify({ idempotencyKey: crypto.randomUUID() })
         });
@@ -1440,7 +1496,7 @@ async function modulePage(module) {
       const reason = window.prompt('Motif de transfert (obligatoire)');
       if (!reason) return;
       try {
-        await apiRequest(`/domain-reseller/orders/${button.dataset.domainTransfer}/transfer`, {
+        await apiRequest(`/domain-subscription/orders/${button.dataset.domainTransfer}/transfer`, {
           method: 'POST',
           body: JSON.stringify({ confirmation: button.dataset.domain, reason })
         });
@@ -1453,7 +1509,7 @@ async function modulePage(module) {
       const reason = window.prompt('Motif de résiliation (obligatoire)');
       if (!reason) return;
       try {
-        await apiRequest(`/domain-reseller/orders/${button.dataset.domainCancel}/cancel-management`, {
+        await apiRequest(`/domain-subscription/orders/${button.dataset.domainCancel}/cancel-management`, {
           method: 'POST',
           body: JSON.stringify({ confirmation: button.dataset.domain, reason })
         });
@@ -1500,6 +1556,19 @@ async function modulePage(module) {
         notification(error.message, 'error');
       }
     }));
+    document.querySelectorAll('[data-domain-provision]').forEach((button) => button.addEventListener('click', async () => {
+      const diagnostic = window.prompt('Diagnostic DNS/TLS');
+      if (diagnostic == null) return;
+      try {
+        await apiRequest(`/platform/domain-reseller/orders/${button.dataset.domainProvision}/provisioning`, {
+          method: 'PUT',
+          body: JSON.stringify({ dnsState: 'pending', tlsState: 'provisioning', diagnostic })
+        });
+        await modulePage(module);
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    }));
     document.querySelectorAll('[data-domain-reconcile]').forEach((button) => button.addEventListener('click', async () => {
       const reason = window.prompt('Diagnostic ou motif de réconciliation');
       if (!reason) return;
@@ -1513,6 +1582,18 @@ async function modulePage(module) {
         notification(error.message, 'error');
       }
     }));
+    document.querySelector('#domain-incident-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await apiRequest('/platform/domain-reseller/incidents', {
+          method: 'POST',
+          body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget)))
+        });
+        await modulePage(module);
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    });
     document.querySelectorAll('[data-domain-repair]').forEach((button) => button.addEventListener('click', async () => {
       try {
         await apiRequest(`/platform/governance/domains/${button.dataset.domainRepair}`, { method: 'PUT', body: JSON.stringify({ accessState: 'active', problem: null }) });
@@ -2204,6 +2285,19 @@ async function route() {
   }
   if (!authenticated && !publicPath) {
     window.location.replace('/login');
+    return;
+  }
+  if (authenticated && path === '/domain-reseller') {
+    const destination = await apiRequest('/domain-reseller/destination');
+    window.location.replace(destination.path);
+    return;
+  }
+  if (authenticated && path === '/platform/domain-reseller' && !hasRole('platform-admin')) {
+    window.location.replace('/dashboard');
+    return;
+  }
+  if (authenticated && path === '/domain-subscription' && (!isInstitutionAdmin() || hasRole('platform-admin'))) {
+    window.location.replace(hasRole('platform-admin') ? '/platform/domain-reseller' : '/dashboard');
     return;
   }
 

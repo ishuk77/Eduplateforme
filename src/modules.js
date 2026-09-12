@@ -79,7 +79,8 @@ export const modules = [
   { id: 'analytics', path: '/analytics', label: 'Analytics', eyebrow: 'Pilotage confidentiel', title: 'Analytics', description: 'Indicateurs, palmarès, filtres et exports calculés sur les données tenant.', highlights: ['Confidentialité', 'Méthodes configurables', 'Exports structurés'] },
   { id: 'support', path: '/support', label: 'Aide & support', eyebrow: 'Centre de service', title: 'Support', description: 'FAQ, guides et tickets L1 à L4 avec historique.', highlights: ['FAQ', 'Tickets', 'Escalade'] },
   { id: 'saas', path: '/saas', label: 'Plans & quotas', eyebrow: 'SaaS', title: 'Plans & quotas', description: 'Entitlements et quotas contrôlés sans simuler la facturation externe.', highlights: ['Plans', 'Quotas', 'Essais'] },
-  { id: 'domainReseller', path: '/domain-reseller', label: 'Domaines & revente', eyebrow: 'Abonnements et domaines', title: 'Domaines & revente', description: 'Commandes, renouvellements, transferts et provisionnement sans simuler les transactions externes.', highlights: ['Propriété institutionnelle', 'Prix séparés', 'Cycle audité'] },
+  { id: 'domainSubscription', path: '/domain-subscription', label: 'Domaine et abonnement', eyebrow: 'Institution', title: 'Domaine et abonnement', description: 'Plan, domaine, renouvellement et transfert de votre institution.', highlights: ['Propriété institutionnelle', 'Prix séparés', 'Cycle audité'] },
+  { id: 'platformDomainReseller', path: '/platform/domain-reseller', label: 'Revente de domaines', eyebrow: 'Administration plateforme', title: 'Revente de domaines', description: 'Fournisseur, catalogue, commandes, incidents et audit de la plateforme.', highlights: ['Fournisseur', 'Prix et marges', 'Réconciliation'] },
   { id: 'operations', path: '/operations', label: 'Exploitation', eyebrow: 'Résilience', title: 'Exploitation', description: 'Sauvegardes, PRA, incidents et statut de service.', highlights: ['RPO/RTO', 'Intégrité', 'Incidents'] },
   { id: 'ai', path: '/ai', label: 'Assistance IA', eyebrow: 'Humain responsable', title: 'Assistance IA', description: 'Demandes consenties et auditables, sans décision autonome à fort impact.', highlights: ['Consentement', 'Audit', 'Garde-fous'] },
   { id: 'parentalConsents', path: '/security/parental-consents', label: 'Consentements', eyebrow: 'Protection', title: 'Consentements parentaux', description: 'Consentements parentaux traçables.', highlights: [] },
@@ -228,6 +229,15 @@ const moduleLookup = new Map([
     eyebrow: 'Apprentissage',
     title: 'Progression et titres',
     description: 'Suivez les prérequis, quiz, examens et titres émis.',
+    highlights: []
+  }],
+  ['/domain-reseller', {
+    id: 'legacyDomainReseller',
+    path: '/domain-reseller',
+    label: 'Domaines',
+    eyebrow: 'Redirection sécurisée',
+    title: 'Domaines',
+    description: 'Redirection selon votre rôle.',
     highlights: []
   }],
   ['/verify-institution', {

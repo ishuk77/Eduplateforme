@@ -30,6 +30,17 @@ SQLite comme PostgreSQL.
 
 ## Exploitation
 
+Les expériences sont strictement séparées :
+
+- `/domain-subscription` est réservé aux administrateurs d’institution et ne
+  retourne que leur abonnement, les prix de vente activés, leurs domaines et
+  leurs commandes;
+- `/platform/domain-reseller` est réservé au rôle `platform-admin` et porte le
+  statut fournisseur, le solde, les coûts/marges, toutes les commandes,
+  l’inscription, la réconciliation, les incidents et l’audit;
+- `/domain-reseller` est un ancien lien qui demande au serveur une destination
+  selon le rôle, sans exposer de données avant la redirection.
+
 Le tableau plateforme expose uniquement les métadonnées nécessaires :
 fournisseur/environnement, état masqué des identifiants, solde lorsqu’il est
 disponible, seuil bas, dernière synchronisation/erreur, catalogue et états de
