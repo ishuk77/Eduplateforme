@@ -295,7 +295,6 @@ td code { white-space: normal; overflow-wrap: anywhere; }
 
 @media (max-width: 560px) {
   .public-header { align-items: flex-start; }
-  .public-header nav .secondary-button { display: none; }
   .landing-hero { margin-top: 3vh; }
   .form-grid, .data-card dl { grid-template-columns: 1fr; }
   .form-grid > * { grid-column: 1; }
