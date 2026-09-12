@@ -103,6 +103,23 @@ export function authorizeRequest(request, service, { organizationId = null, perm
       throw new ApiError('FORBIDDEN', 'Contextual permission rule denied this action.', 403);
     }
   }
+  const paymentControlledReads = new Set([
+    'academics.read',
+    'assignments.read',
+    'grading.read',
+    'attendance.read',
+    'lms.read',
+    'reports.read',
+    'certificates.read'
+  ]);
+  if (scopedOrganizationId
+    && permissions.some((permission) => paymentControlledReads.has(permission))
+    && typeof service.getAcademicAccessForAccount === 'function') {
+    const access = service.getAcademicAccessForAccount(identity.accountId, scopedOrganizationId);
+    if (!access.active) {
+      throw new ApiError('PAYMENT_REQUIRED', 'Academic data is pending the configured payment requirement.', 403);
+    }
+  }
 
   return {
     ...identity,

@@ -190,6 +190,10 @@ export class AcademicPeriod extends OrganizationEntity {
     super(input);
     this.academicYearId = assertRequiredString(input.academicYearId, 'academicYearId');
     this.periodType = assertEnum(input.periodType, ['semester', 'trimester'], 'periodType');
+    this.sequence = Number(input.sequence ?? String(input.code ?? input.name ?? '').match(/\d+/)?.[0] ?? 1);
+    if (!Number.isInteger(this.sequence) || this.sequence < 1) {
+      throw new ValidationError('sequence must be a positive integer.');
+    }
     this.code = assertRequiredString(input.code, 'code');
     this.name = assertRequiredString(input.name, 'name');
     this.startsOn = assertRequiredString(input.startsOn, 'startsOn');

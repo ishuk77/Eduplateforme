@@ -49,22 +49,37 @@ export class FoundationService {
   }
 
   createOrganization(input, actorId = null) {
-    if (!this.countryRules.validateOrganizationReference(input.countryCode, input.internalReference)) {
+    const countryCode = String(input.countryCode ?? '').toUpperCase();
+    const baseReference = String(input.displayName ?? input.legalName ?? 'ORG')
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'ORG';
+    let internalReference = String(input.internalReference ?? '').trim().toUpperCase();
+    if (!internalReference) {
+      internalReference = baseReference;
+      let suffix = 2;
+      while ([...this.organizations.values()].some((item) =>
+        item.countryCode === countryCode && item.internalReference === internalReference
+      )) {
+        internalReference = `${baseReference.slice(0, 20)}-${suffix++}`;
+      }
+    }
+    const normalizedInput = { ...input, countryCode, internalReference };
+    if (!this.countryRules.validateOrganizationReference(countryCode, internalReference)) {
       throw new ValidationError('Organization reference is not valid for the configured country rules.');
     }
 
-    if (input.nationalInstitutionId !== undefined && input.nationalInstitutionId !== null
-      && !this.countryRules.validateNationalOrganizationIdentifier(input.countryCode, input.nationalInstitutionId)) {
+    if (normalizedInput.nationalInstitutionId !== undefined && normalizedInput.nationalInstitutionId !== null
+      && !this.countryRules.validateNationalOrganizationIdentifier(countryCode, normalizedInput.nationalInstitutionId)) {
       throw new ValidationError('National institution identifier is not valid for the configured country rules.');
     }
 
-    for (const [index, identifier] of (input.localIdentifiers ?? []).entries()) {
-      if (!this.countryRules.validateLocalOrganizationIdentifier(input.countryCode, identifier.value)) {
+    for (const [index, identifier] of (normalizedInput.localIdentifiers ?? []).entries()) {
+      if (!this.countryRules.validateLocalOrganizationIdentifier(countryCode, identifier.value)) {
         throw new ValidationError(`Local organization identifier at index ${index} is not valid for the configured country rules.`);
       }
     }
 
-    const organization = new Organization(input);
+    const organization = new Organization(normalizedInput);
     this.assertUniqueOrganizationReference(organization);
 
     if (organization.parentOrganizationId !== null) {
@@ -171,7 +186,17 @@ export class FoundationService {
 
   createAcademicYear(input, actorId = null) {
     this.assertExists(this.organizations, input.organizationId, 'organization');
-    const academicYear = new AcademicYear(input);
+    const generatedLabel = `${String(input.startsOn ?? '').slice(0, 4)}-${String(input.endsOn ?? '').slice(0, 4)}`;
+    const academicYear = new AcademicYear({
+      ...input,
+      code: input.code || generatedLabel,
+      name: input.name || generatedLabel
+    });
+    if ([...this.academicYears.values()].some((item) =>
+      item.organizationId === academicYear.organizationId && item.code === academicYear.code && item.status !== 'archived'
+    )) {
+      throw new ValidationError('Academic year code must be unique within the organization.');
+    }
     this.academicYears.set(academicYear.id, academicYear);
     this.recordEvent('academic-year.created', academicYear, actorId);
     return academicYear;

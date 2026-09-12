@@ -1871,7 +1871,10 @@ export class PersistentEducationPlatformService extends EducationPlatformService
         city: organizationInput.headquartersAddress?.city ?? 'Not configured',
         language: organizationInput.locale ?? 'fr',
         currency: organizationInput.currency ?? 'USD',
-        timezone: organizationInput.timezone ?? 'UTC'
+        timezone: organizationInput.timezone ?? 'UTC',
+        dateFormat: organizationInput.dateFormat ?? 'YYYY-MM-DD',
+        latitude: organizationInput.latitude ?? null,
+        longitude: organizationInput.longitude ?? null
       });
       this.recordCreate('localizationProfiles', localization, account.id, 'localization.onboard');
 
@@ -2591,6 +2594,45 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       throw new ValidationError('Status and history must be changed through the dedicated transition workflow.');
     }
     const entity = collection.get(id);
+    if (resource === 'organizations') {
+      new Organization({
+        ...cloneRecord(entity),
+        ...patch,
+        id: entity.id,
+        lifecycle: { status: entity.status }
+      });
+    }
+    if (resource === 'academicYears') {
+      const candidate = new AcademicYear({ ...cloneRecord(entity), ...patch, id: entity.id });
+      if ([...this.academicYears.values()].some((item) =>
+        item.id !== id
+        && item.organizationId === candidate.organizationId
+        && item.code === candidate.code
+        && item.status !== 'archived'
+      )) {
+        throw new ValidationError('Academic year code must be unique within the organization.');
+      }
+    }
+    if (resource === 'academicPeriods') {
+      const candidate = new AcademicPeriod({ ...cloneRecord(entity), ...patch, id: entity.id });
+      const year = this.assertTenantRecord(this.academicYears, candidate.academicYearId, candidate.organizationId, 'academic year');
+      if (Date.parse(candidate.startsOn) < Date.parse(year.startsOn)
+        || Date.parse(candidate.endsOn) > Date.parse(year.endsOn)) {
+        throw new ValidationError('Academic period dates must be contained within the academic year.');
+      }
+      if ([...this.academicPeriods.values()].some((item) =>
+        item.id !== id
+        && item.organizationId === candidate.organizationId
+        && item.academicYearId === candidate.academicYearId
+        && item.sequence === candidate.sequence
+        && item.status !== 'archived'
+      )) {
+        throw new ValidationError('Academic period sequence must be unique within the academic year.');
+      }
+    }
+    if (resource === 'fees') {
+      new FeeConfiguration({ ...cloneRecord(entity), ...patch, id: entity.id });
+    }
     if (resource === 'professionalProfiles' && patch.assignmentOrganizationIds) {
       for (const organizationId of patch.assignmentOrganizationIds) {
         this.assertExists(this.organizations, organizationId, 'assignment organization');
@@ -2975,6 +3017,21 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     const experienceRole = role === 'tenant-admin'
       ? ({ university: 'university-admin', 'training-center': 'training-center-admin', school: 'school-admin' }[organizationType] ?? 'school-admin')
       : role;
+    const academicAccess = this.getAcademicAccessForAccount(accountId, organizationId);
+    if (['learner', 'student', 'apprenant', 'university-student', 'etudiant-universitaire'].includes(role)
+      && !academicAccess.active) {
+      return {
+        role,
+        experienceRole,
+        roles,
+        academicAccess,
+        cards: [],
+        availableModules: ['support'],
+        nextSteps: permissions.includes('*') || permissions.includes('finance.read')
+          ? [{ label: 'View payment status', path: '/finance' }]
+          : []
+      };
+    }
     const cardsByRole = {
       admin: ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'financeCollected', 'dataQualityScore'],
       'platform-admin': ['headcount', 'enrollments', 'financeCollected', 'dataQualityScore', 'lmsActivityCount'],
@@ -3070,6 +3127,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       role,
       experienceRole,
       roles,
+      academicAccess,
       cards: (cardsByRole[experienceRole] ?? cardsByRole[role] ?? cardsByRole.learner)
         .filter((metric) => Object.hasOwn(analytics.metrics, metric))
         .map((metric) => ({ metric, value: analytics.metrics[metric] })),
@@ -3079,6 +3137,87 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       nextSteps: (nextStepDefinitions[experienceRole] ?? nextStepDefinitions[role] ?? nextStepDefinitions.learner)
         .filter(([permission]) => allowed(permission))
         .map(([, label, path]) => ({ label, path }))
+    };
+  }
+
+  getAcademicAccessForAccount(accountId, organizationId) {
+    const account = this.accounts.get(accountId);
+    if (!account || !account.organizationIds.includes(organizationId)) {
+      return { active: false, reason: 'not_enrolled', policy: null };
+    }
+    const learnerFacingRoles = new Set([
+      'learner',
+      'student',
+      'trainee',
+      'apprenant',
+      'university-student',
+      'etudiant-universitaire',
+      'parent',
+      'guardian'
+    ]);
+    const roleCodes = this.getRoleCodes(accountId, organizationId);
+    if (roleCodes.some((roleCode) => !learnerFacingRoles.has(roleCode))) {
+      return { active: true, reason: 'operational_role', policy: null };
+    }
+    let learner = [...this.learners.values()].find((item) =>
+      item.organizationId === organizationId && item.personId === account.personId && item.status !== 'archived'
+    );
+    if (!learner) {
+      const guardianProfile = [...this.guardianProfiles.values()].find((item) =>
+        item.organizationId === organizationId && item.personId === account.personId && item.status !== 'archived'
+      );
+      const relation = guardianProfile && [...this.guardianLearnerRelations.values()].find((item) =>
+        item.organizationId === organizationId
+        && item.guardianProfileId === guardianProfile.id
+        && item.status !== 'withdrawn'
+      );
+      learner = relation ? this.learners.get(relation.learnerId) : null;
+    }
+    if (!learner) return { active: true, reason: 'not_learner', policy: null };
+    const enrollment = [...this.enrollments.values()].find((item) =>
+      item.organizationId === organizationId && item.learnerId === learner.id && item.status === 'active'
+    );
+    if (!enrollment) return { active: false, reason: 'no_active_enrollment', policy: null };
+    const policies = [...this.fees.values()].filter((item) =>
+      item.organizationId === organizationId
+      && (!item.programId || item.programId === enrollment.programId)
+      && item.status !== 'archived'
+    );
+    const policy = policies.find((item) => item.programId === enrollment.programId) ?? policies[0] ?? null;
+    if (!policy || policy.freeTraining || policy.accessPolicy === 'no_payment_required') {
+      return {
+        active: true,
+        reason: policy?.freeTraining ? 'free_training' : 'no_payment_required',
+        policy: policy?.accessPolicy ?? 'no_payment_required'
+      };
+    }
+    const invoices = [...this.invoices.values()].filter((item) =>
+      item.organizationId === organizationId
+      && item.learnerId === learner.id
+      && item.feeConfigurationId === policy.id
+      && item.status !== 'archived'
+    );
+    const invoiced = invoices.reduce((sum, invoice) => sum + invoice.amount, 0);
+    const paid = invoices.reduce((sum, invoice) => sum + (invoice.amount - invoice.balance), 0);
+    const percentage = invoiced > 0 ? (paid / invoiced) * 100 : 0;
+    const active = policy.accessPolicy === 'registration_fee_paid'
+      ? paid > 0
+      : policy.accessPolicy === 'minimum_percentage'
+        ? percentage >= policy.minimumPercentage
+        : policy.accessPolicy === 'minimum_amount'
+          ? paid >= policy.minimumAmount
+          : policy.accessPolicy === 'fully_paid'
+            ? invoiced > 0 && invoices.every((invoice) => invoice.balance === 0)
+            : false;
+    return {
+      active,
+      reason: active ? 'payment_criteria_satisfied' : 'payment_pending',
+      policy: policy.accessPolicy,
+      paid,
+      invoiced,
+      percentage: Number(percentage.toFixed(2)),
+      requiredPercentage: policy.minimumPercentage,
+      requiredAmount: policy.minimumAmount
     };
   }
 

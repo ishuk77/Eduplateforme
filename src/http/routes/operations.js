@@ -51,13 +51,76 @@ export function registerOperationsRoutes(router, { service }) {
       version: '1.0',
       guides: [
         {
-          id: 'configuration',
-          title: 'Configuration de l’établissement',
+          id: 'organizations',
+          title: 'Organisation et institution',
           audience: ['platform-admin', 'school-admin', 'university-admin', 'training-center-admin'],
           permissions: ['organizations.write', 'institution.write', 'academics.write'],
+          prerequisites: ['Compte administrateur actif'],
+          workflow: ['Choisir le type et le pays', 'Laisser générer la référence interne ou ouvrir les options avancées', 'Configurer fuseau, format de date et géolocalisation facultative', 'Ajouter ensuite d’autres institutions si nécessaire'],
+          actions: ['Créer une institution', 'Distinguer référence interne, identifiant national et identifiant local', 'Téléverser les preuves dans Identité & preuves']
+        },
+        {
+          id: 'referenceEntries',
+          title: 'Référentiels, catalogues et codification',
+          audience: ['admin'],
+          permissions: ['references.read', 'references.write'],
           prerequisites: ['Organisation active'],
-          workflow: ['Créer les sites', 'Créer l’année et les périodes', 'Créer niveaux, programmes, classes, matières et cours', 'Créer les identités et affecter les rôles'],
-          actions: ['Créer', 'Modifier', 'Archiver', 'Consulter l’historique']
+          workflow: ['Choisir une famille de catalogue', 'Définir un code stable', 'Renseigner des libellés localisés', 'Prévisualiser un CSV/XLSX avant application'],
+          actions: ['Créer manuellement', 'Télécharger le modèle', 'Importer catalog,code,labelFr,labelEn,labelEs,labelPt,labelAr,countryCode']
+        },
+        {
+          id: 'years',
+          title: 'Années académiques',
+          audience: ['admin'],
+          permissions: ['academics.write'],
+          prerequisites: ['Organisation active'],
+          workflow: ['Saisir le libellé affiché', 'Choisir début et fin', 'Accepter le code technique généré ou le personnaliser'],
+          actions: ['Créer', 'Vérifier que la fin suit le début']
+        },
+        {
+          id: 'academicPeriods',
+          title: 'Périodes académiques',
+          audience: ['admin'],
+          permissions: ['academics.write'],
+          prerequisites: ['Année académique créée'],
+          workflow: ['Choisir semestre ou trimestre', 'Attribuer un numéro unique', 'Saisir des dates contenues dans l’année'],
+          actions: ['Créer', 'Contrôler séquence et dates']
+        },
+        {
+          id: 'classes',
+          title: 'Classes, groupes et sections',
+          audience: ['admin'],
+          permissions: ['academics.write'],
+          prerequisites: ['Année, programme et niveau créés'],
+          workflow: ['Utiliser name comme libellé affiché', 'Utiliser code comme identifiant stable', 'Affecter niveau et programme', 'Importer la liste des personnes'],
+          actions: ['Créer une classe', 'Importer CSV/XLSX']
+        },
+        {
+          id: 'people',
+          title: 'Personnes et import unifié',
+          audience: ['admin'],
+          permissions: ['people.write', 'profiles.write', 'academics.write', 'accounts.write'],
+          prerequisites: ['Classes créées pour les apprenants', 'Campus créé pour les professionnels'],
+          workflow: ['Choisir personType', 'Compléter les colonnes conditionnelles', 'Prévisualiser les erreurs et doublons', 'Appliquer transactionnellement', 'Télécharger une seule fois les identifiants'],
+          actions: ['Importer apprenants/étudiants/stagiaires', 'Importer parents/responsables', 'Importer enseignants/formateurs/staff']
+        },
+        {
+          id: 'accounts',
+          title: 'Comptes des apprenants et responsables',
+          audience: ['admin'],
+          permissions: ['accounts.write'],
+          prerequisites: ['Personne et profil créés'],
+          workflow: ['Choisir parent, learner ou both lorsque le niveau ne détermine pas la règle', 'Utiliser le matricule comme identifiant apprenant', 'Remettre le mot de passe temporaire une seule fois', 'Forcer son changement à la première connexion'],
+          actions: ['Créer sans adresse courriel pour un apprenant', 'Ne pas activer la connexion téléphonique sans OTP vérifié']
+        },
+        {
+          id: 'payment-activation',
+          title: 'Activation selon frais et paiements',
+          audience: ['admin', 'finance', 'learner'],
+          permissions: ['finance.write', 'finance.read', 'lms.read'],
+          prerequisites: ['Apprenant inscrit', 'Politique institution ou programme configurée'],
+          workflow: ['Choisir aucun paiement, frais payé, seuil pourcentage/montant ou solde intégral', 'Émettre la facture', 'Enregistrer les paiements', 'Laisser le serveur activer les données académiques'],
+          actions: ['Configurer la gratuité', 'Afficher un état en attente sans fuite de données']
         },
         {
           id: 'daily-operations',

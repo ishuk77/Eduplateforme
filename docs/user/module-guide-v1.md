@@ -11,6 +11,18 @@ Ce guide couvre l’interface disponible en français, anglais, espagnol, portug
 
 Chaque écran de module renvoie vers `/help`. Une liste de référence indique explicitement son état de chargement, son erreur ou le prérequis à créer.
 
+### Organisation
+
+**Rôle :** administrateur. **Prérequis :** compte personnel actif et authentifié. L’inscription crée d’abord ce compte; l’organisation est créée après connexion et d’autres institutions peuvent ensuite être ajoutées. Le type est choisi parmi école, université/enseignement supérieur et centre de formation. La `internalReference` est un code technique local, généré par le serveur et rendu unique dans le pays; l’identifiant national et les identifiants locaux restent distincts. Le fuseau utilise la liste IANA du navigateur avec un fallback sûr, le format de date montre un exemple, et latitude/longitude sont facultatives, validées ensemble et soumises à la politique de confidentialité. Les preuves se téléversent dans **Identité & preuves** avant d’être sélectionnées dans les workflows réglementaires.
+
+### Référentiels
+
+**Rôle :** administrateur de référentiels. **Prérequis :** organisation active. Un `catalog` regroupe une famille de valeurs (`levels`, `subjects`, `qualifications`); le `code` est la référence stable pour API/imports; les libellés FR/EN/ES/PT/AR sont affichables. La saisie manuelle et l’import CSV/XLSX suivent le même modèle : `catalog,code,labelFr,labelEn,labelEs,labelPt,labelAr,countryCode`. Le dry-run vérifie les colonnes, doublons et formules; l’application est transactionnelle, idempotente et limitée au tenant.
+
+### Années, périodes et classes
+
+**Rôle :** administrateur académique. **Prérequis :** organisation, puis année avant programme/classe/période. Le nom est le libellé affiché; le code est une référence technique stable. Le code d’année est dérivé des dates lorsqu’il est omis. La fin doit suivre le début. Une période possède un type, un numéro de séquence unique et des dates entièrement comprises dans l’année. Pour une classe, `name` désigne le groupe/section affiché (par exemple « 6e A ») et `code` son identifiant stable (par exemple `6A-2026`); cycle et niveau proviennent de choix/référentiels.
+
 ## Opérations quotidiennes
 
 Les modules inscriptions, emplois du temps, devoirs, présences, notes, LMS, finances, communications et documents n’apparaissent que si le rôle possède la permission de lecture correspondante. Les écritures requièrent la permission `*.write`. Le tableau de bord ne calcule et n’affiche que les indicateurs autorisés et propose des prochaines actions adaptées aux rôles administrateur plateforme, administrateur école, administrateur université, administrateur centre de formation, apprenant/étudiant, enseignant/formateur et parent/tuteur.
@@ -21,11 +33,19 @@ Les imports nécessitent `academics.write`, une connexion en ligne et une confir
 
 Schémas fixes:
 
+- `people`: `personType,givenName,familyName,email,phone,learnerNumber,gradeLevel,classCode,guardianGivenName,guardianFamilyName,guardianEmail,relationship,professionalType,roleTitle,startsOn,campusCode,createAccount,accountPolicy`
 - `learners`: `givenName,familyName,email,learnerNumber,classCode,createAccount`
 - `class-roster`: `givenName,familyName,email,learnerNumber,createAccount` avec `classId` choisi dans l’interface
 - `staff`: `givenName,familyName,email,professionalType,roleTitle,startsOn,campusCode,createAccount`
+- `references`: `catalog,code,labelFr,labelEn,labelEs,labelPt,labelAr,countryCode`
 
-L’application réutilise une personne du tenant par courriel, un apprenant par numéro, puis évite une seconde inscription dans la même classe. Une clé d’idempotence empêche la répétition d’un lot. L’application finale est transactionnelle sous SQLite et PostgreSQL. Si `createAccount` vaut `true`, le résultat immédiat contient une seule fois les identifiants temporaires; seul le hash du mot de passe est stocké et la connexion impose un changement avant tout accès. Aucun courriel n’est envoyé sans fournisseur configuré.
+Pour `people`, `personType` accepte apprenant/étudiant/stagiaire, parent/responsable ou enseignant/formateur/staff. Les colonnes apprenant créent Person, profil apprenant, inscription et classe; les colonnes responsable créent profil et relation; les colonnes professionnelles créent profil et affectation. L’application réutilise une personne du tenant par courriel, un apprenant par numéro, puis évite une seconde inscription dans la même classe. Une clé d’idempotence empêche la répétition d’un lot. L’application finale est transactionnelle sous SQLite et PostgreSQL.
+
+Si `createAccount` vaut `true`, un apprenant peut utiliser son matricule sans courriel. Préscolaire/maternelle et niveaux 1 à 4 appliquent par défaut `parent`; à partir du niveau 5, ou lorsque le niveau est inconnu, le fichier choisit explicitement `parent`, `learner` ou `both`. Un téléphone est un contact, jamais un identifiant de connexion sans OTP vérifié. Le résultat immédiat contient une seule fois les identifiants temporaires; seul le hash du mot de passe est stocké et la connexion impose un changement avant tout accès. Aucun courriel n’est envoyé sans fournisseur configuré.
+
+### Activation par paiement
+
+**Rôles :** administration/finance pour configurer et enregistrer, apprenant pour consulter son état. **Prérequis :** inscription active, frais et facture si le programme n’est pas gratuit. La politique peut être `no_payment_required`, `registration_fee_paid`, `minimum_percentage`, `minimum_amount` ou `fully_paid`, au niveau institutionnel ou d’un programme. Une formation gratuite contourne explicitement le paiement. Le tableau de bord existe immédiatement, mais le serveur masque notes, présence, progression et contenus LMS tant que le critère n’est pas atteint; l’écran affiche seulement un état d’attente sans fuite de données. Les opérations administrateur/enseignant restent régies par leurs permissions.
 
 ## Gouvernance et exploitation
 
