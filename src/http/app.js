@@ -206,6 +206,7 @@ function createOpenApiDescription() {
       '/support/tickets': { get: { summary: 'List support tickets' }, post: { summary: 'Create support ticket' } },
       '/saas/entitlements/check': { post: { summary: 'Check a plan feature and its quotas' } },
       '/operations/backups/request': { post: { summary: 'Register a backup, restore or integrity-test request' } },
+      '/operations/demo-accounts/provision': { post: { summary: 'Provision tenant-scoped role preview accounts once as tenant administrator' } },
       '/operations/status': { get: { summary: 'Return incident-backed service status' } },
       '/ai/assist': { post: { summary: 'Request consented assistive AI with high-impact guardrails' } }
     }

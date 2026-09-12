@@ -350,6 +350,26 @@ const TENANT_ADMIN_PERMISSIONS = Object.freeze([
   'audit.read'
 ]);
 
+const PREVIEW_ACCOUNT_ROLES = Object.freeze({
+  learner: Object.freeze(['assignments.read', 'lms.read']),
+  student: Object.freeze(['calendar.read', 'grading.read', 'lms.read']),
+  teacher: Object.freeze([
+    'assignments.read', 'assignments.write',
+    'attendance.read', 'attendance.write',
+    'grading.read', 'grading.write',
+    'lms.read', 'scheduling.read'
+  ]),
+  'platform-admin': Object.freeze(['audit.read', 'operations.read'])
+});
+
+function createPreviewTemporaryPassword() {
+  return `Edu!${randomBytes(24).toString('base64url')}9a`;
+}
+
+function samePermissions(left, right) {
+  return left.length === right.length && left.every((permission) => right.includes(permission));
+}
+
 function normalizePaging({ limit = 25, offset = 0 } = {}) {
   return {
     limit: Math.max(1, Math.min(200, Number(limit) || 25)),
@@ -1937,6 +1957,118 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       }, account.id);
       this.recordCreate('roleAssignments', assignment, account.id, 'role-assignment.organization-add');
       return organization;
+    });
+  }
+
+  provisionPreviewAccounts(organizationId, actorAccountId) {
+    this.assertOrganizationContext(organizationId);
+    const actor = this.accounts.get(actorAccountId);
+    if (!actor?.organizationIds.includes(organizationId)
+      || !this.getRoleCodes(actorAccountId, organizationId).includes('tenant-admin')) {
+      throw new ValidationError('A tenant administrator account is required to provision preview accounts.');
+    }
+
+    return this.transactional(() => {
+      const results = [];
+      const credentials = [];
+      for (const [roleCode, requiredPermissions] of Object.entries(PREVIEW_ACCOUNT_ROLES)) {
+        for (const code of requiredPermissions) {
+          if (!this.findPermissionByCode(code)) {
+            const permission = FoundationService.prototype.createPermission.call(this, {
+              code,
+              description: `Preview dashboard permission: ${code}`
+            }, actorAccountId);
+            this.recordCreate('permissions', permission, actorAccountId, 'permission.preview-account-create');
+          }
+        }
+
+        let role = [...this.roles.values()].find((candidate) =>
+          candidate.code === roleCode && samePermissions(candidate.permissions, requiredPermissions)
+        );
+        if (!role) {
+          role = FoundationService.prototype.createRole.call(this, {
+            code: roleCode,
+            name: `Preview ${roleCode}`,
+            permissions: [...requiredPermissions],
+            scope: 'organization'
+          }, actorAccountId);
+          this.recordCreate('roles', role, actorAccountId, 'role.preview-account-create');
+        }
+
+        let account = [...this.accounts.values()].find((candidate) =>
+          candidate.metadata?.previewAccountRole === roleCode
+          && candidate.metadata?.previewOrganizationId === organizationId
+        );
+        let person = account ? this.people.get(account.personId) : null;
+        let created = false;
+        if (!account) {
+          const email = `preview-${roleCode}-${organizationId}@demo.eduplateforme.invalid`;
+          if ([...this.accounts.values()].some((candidate) => candidate.email === email)) {
+            throw new ValidationError(`The reserved preview email for ${roleCode} is already in use.`);
+          }
+          const usernameBase = `preview-${roleCode}-${organizationId.slice(0, 8)}`.toLowerCase();
+          let username = usernameBase;
+          let suffix = 1;
+          while ([...this.accounts.values()].some((candidate) =>
+            candidate.username.toLowerCase() === username.toLowerCase()
+          )) {
+            username = `${usernameBase}-${suffix++}`;
+          }
+
+          person = FoundationService.prototype.registerPerson.call(this, {
+            givenName: 'Preview',
+            familyName: roleCode,
+            primaryOrganizationId: organizationId,
+            contacts: [{ type: 'email', value: email, isPrimary: true }],
+            metadata: { previewAccountRole: roleCode, previewOrganizationId: organizationId }
+          }, actorAccountId);
+          this.recordCreate('people', person, actorAccountId, 'person.preview-account-create');
+
+          const temporaryPassword = createPreviewTemporaryPassword();
+          account = FoundationService.prototype.openUserAccount.call(this, {
+            personId: person.id,
+            username,
+            email,
+            organizationIds: [organizationId],
+            lifecycle: {
+              metadata: {
+                forcePasswordChange: true,
+                previewAccountRole: roleCode,
+                previewOrganizationId: organizationId
+              }
+            }
+          }, actorAccountId);
+          account.activate();
+          this.recordCreate('accounts', account, actorAccountId, 'account.preview-account-create');
+          this.setLocalPassword(account.id, temporaryPassword);
+          credentials.push({ roleCode, username, email, temporaryPassword });
+          created = true;
+        }
+
+        const assigned = [...this.roleAssignments.values()].some((assignment) =>
+          assignment.personId === person.id
+          && assignment.roleId === role.id
+          && assignment.organizationId === organizationId
+          && assignment.status !== 'archived'
+        );
+        if (!assigned) {
+          const assignment = FoundationService.prototype.assignRole.call(this, {
+            personId: person.id,
+            roleId: role.id,
+            organizationId
+          }, actorAccountId);
+          this.recordCreate('roleAssignments', assignment, actorAccountId, 'role-assignment.preview-account-create');
+        }
+
+        results.push({
+          roleCode,
+          accountId: account.id,
+          personId: person.id,
+          username: account.username,
+          created
+        });
+      }
+      return { organizationId, accounts: results, credentials };
     });
   }
 
