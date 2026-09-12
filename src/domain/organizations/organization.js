@@ -67,7 +67,7 @@ export class Organization extends Entity {
     officialContact = {},
     settings = {},
     lifecycle = {}
-  }) {
+  }, { validate = true } = {}) {
     super({ id, status: lifecycle.status ?? 'active' });
     this.legalName = assertRequiredString(legalName, 'legalName');
     this.displayName = assertRequiredString(displayName, 'displayName');
@@ -80,23 +80,31 @@ export class Organization extends Entity {
     this.localIdentifiers = assertArray(localIdentifiers, 'localIdentifiers').map((identifier, index) =>
       normalizeIdentifier(identifier, index, 'localIdentifiers', 'local')
     );
-    this.organizationType = assertChoice(organizationType, ORGANIZATION_TYPES, 'organizationType');
+    this.organizationType = validate
+      ? assertChoice(organizationType, ORGANIZATION_TYPES, 'organizationType')
+      : assertRequiredString(organizationType, 'organizationType');
     this.parentOrganizationId = assertOptionalString(parentOrganizationId, 'parentOrganizationId');
     this.legalForm = assertOptionalString(legalForm, 'legalForm');
     this.registrationNumber = assertOptionalString(registrationNumber, 'registrationNumber');
     this.taxIdentifier = assertOptionalString(taxIdentifier, 'taxIdentifier');
     this.administrativeAuthority = assertOptionalString(administrativeAuthority, 'administrativeAuthority');
-    this.operationalStatus = assertChoice(operationalStatus, ORGANIZATION_STATUSES, 'operationalStatus');
+    this.operationalStatus = validate
+      ? assertChoice(operationalStatus, ORGANIZATION_STATUSES, 'operationalStatus')
+      : assertRequiredString(operationalStatus, 'operationalStatus');
     this.timezone = assertRequiredString(timezone, 'timezone');
-    try {
-      new Intl.DateTimeFormat('en', { timeZone: this.timezone }).format();
-    } catch {
-      throw new ValidationError('timezone must be a valid IANA time zone.');
+    if (validate) {
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: this.timezone }).format();
+      } catch {
+        throw new ValidationError('timezone must be a valid IANA time zone.');
+      }
     }
-    this.dateFormat = assertChoice(dateFormat, ORGANIZATION_DATE_FORMATS, 'dateFormat');
-    this.latitude = assertCoordinate(latitude, -90, 90, 'latitude');
-    this.longitude = assertCoordinate(longitude, -180, 180, 'longitude');
-    if ((this.latitude === null) !== (this.longitude === null)) {
+    this.dateFormat = validate
+      ? assertChoice(dateFormat, ORGANIZATION_DATE_FORMATS, 'dateFormat')
+      : assertRequiredString(dateFormat, 'dateFormat');
+    this.latitude = validate ? assertCoordinate(latitude, -90, 90, 'latitude') : latitude;
+    this.longitude = validate ? assertCoordinate(longitude, -180, 180, 'longitude') : longitude;
+    if (validate && (this.latitude === null) !== (this.longitude === null)) {
       throw new ValidationError('latitude and longitude must be provided together.');
     }
     this.headquartersAddress = assertPlainObject(headquartersAddress, 'headquartersAddress');

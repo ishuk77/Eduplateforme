@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { createHttpServer } from '../../src/http/server.js';
@@ -55,6 +57,105 @@ function csvInput(organizationId, kind, headers, row, extra = {}) {
     ...extra
   };
 }
+
+test('legacy invalid configuration hydrates unchanged while new academic year writes remain strict', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'eduplateforme-legacy-'));
+  const databaseUrl = `sqlite:${join(directory, 'legacy.sqlite')}`;
+  let service;
+  let reloaded;
+  try {
+    service = createPersistentEducationPlatformService({ databaseUrl });
+    const organizationId = 'legacy-organization';
+    await service.repositories.organizations.upsert({
+      id: organizationId,
+      legalName: 'Legacy institution',
+      displayName: 'Legacy institution',
+      internalReference: 'LEGACY-001',
+      countryCode: 'SN',
+      organizationType: 'legacy-school',
+      operationalStatus: 'legacy-active',
+      timezone: 'Legacy/Timezone',
+      dateFormat: 'DD-MM-YYYY',
+      latitude: 95,
+      longitude: null
+    });
+    await service.repositories.academicYears.upsert({
+      id: 'legacy-year',
+      organizationId,
+      code: 'LEGACY-2026',
+      name: 'Legacy 2026',
+      startsOn: '2026-09-02',
+      endsOn: '2026-07-02',
+      calendarSystem: 'gregorian'
+    });
+    await service.repositories.localizationProfiles.upsert({
+      id: 'legacy-localization',
+      organizationId,
+      countryCode: 'SN',
+      city: 'Dakar',
+      language: 'fr',
+      currency: 'USD',
+      timezone: 'Legacy/Timezone',
+      dateFormat: 'DD-MM-YYYY',
+      calendar: 'gregory',
+      latitude: 95,
+      longitude: null
+    });
+    await service.repositories.academicPeriods.upsert({
+      id: 'legacy-period',
+      organizationId,
+      academicYearId: 'legacy-year',
+      periodType: 'semester',
+      sequence: 0,
+      code: 'S0',
+      name: 'Legacy semester',
+      startsOn: '2026-07-02',
+      endsOn: '2026-09-02'
+    });
+    await service.repositories.fees.upsert({
+      id: 'legacy-fee',
+      organizationId,
+      feeType: 'tuition',
+      amount: -1,
+      currency: 'USD'
+    });
+    await service.close();
+    service = null;
+
+    reloaded = createPersistentEducationPlatformService({ databaseUrl });
+    const years = reloaded.listCrudResource('academicYears', { organizationId }).items;
+    assert.equal(years.length, 1);
+    assert.equal(years[0].startsOn, '2026-09-02');
+    assert.equal(years[0].endsOn, '2026-07-02');
+    assert.equal(reloaded.organizations.get(organizationId).organizationType, 'legacy-school');
+    assert.equal(reloaded.organizations.get(organizationId).timezone, 'Legacy/Timezone');
+    assert.equal(reloaded.localizationProfiles.get(organizationId).dateFormat, 'DD-MM-YYYY');
+    assert.equal(reloaded.academicPeriods.get('legacy-period').sequence, 0);
+    assert.equal(reloaded.fees.get('legacy-fee').amount, -1);
+
+    assert.throws(() => reloaded.createAcademicYear({
+      organizationId,
+      code: 'INVALID-NEW',
+      name: 'Invalid new year',
+      startsOn: '2027-09-01',
+      endsOn: '2027-07-01'
+    }, 'bootstrap'), /after startsOn/);
+    const validYear = reloaded.createAcademicYear({
+      organizationId,
+      code: 'VALID-2027',
+      name: 'Valid 2027',
+      startsOn: '2027-09-01',
+      endsOn: '2028-07-01'
+    }, 'bootstrap');
+    assert.throws(() => reloaded.updateCrudResource('academicYears', validYear.id, {
+      endsOn: '2027-07-01'
+    }, 'bootstrap'), /after startsOn/);
+  } finally {
+    await reloaded?.close();
+    await service?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('organization defaults, localization and academic periods enforce safe configuration', async () => {
   const service = createPersistentEducationPlatformService({ databaseUrl: 'sqlite::memory:' });

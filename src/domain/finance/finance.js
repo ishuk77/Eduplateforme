@@ -30,25 +30,27 @@ export class FeeConfiguration extends Entity {
     minimumPercentage = null,
     minimumAmount = null,
     freeTraining = false
-  }) {
+  }, { validate = true } = {}) {
     super({ id });
     this.organizationId = assertRequiredString(organizationId, 'organizationId');
     this.feeType = assertRequiredString(feeType, 'feeType');
     this.amount = Number(amount);
-    if (!Number.isFinite(this.amount) || this.amount < 0) throw new ValidationError('amount must be a non-negative number.');
+    if (validate && (!Number.isFinite(this.amount) || this.amount < 0)) {
+      throw new ValidationError('amount must be a non-negative number.');
+    }
     this.currency = assertCurrency(currency);
     this.programId = programId;
-    if (!ACCESS_POLICIES.includes(accessPolicy)) throw new ValidationError('Unsupported accessPolicy.');
+    if (validate && !ACCESS_POLICIES.includes(accessPolicy)) throw new ValidationError('Unsupported accessPolicy.');
     this.accessPolicy = accessPolicy;
     this.minimumPercentage = minimumPercentage === null || minimumPercentage === '' ? null : Number(minimumPercentage);
     this.minimumAmount = minimumAmount === null || minimumAmount === '' ? null : Number(minimumAmount);
-    if (typeof freeTraining !== 'boolean') throw new ValidationError('freeTraining must be a boolean.');
+    if (validate && typeof freeTraining !== 'boolean') throw new ValidationError('freeTraining must be a boolean.');
     this.freeTraining = freeTraining;
-    if (accessPolicy === 'minimum_percentage'
+    if (validate && accessPolicy === 'minimum_percentage'
       && (!Number.isFinite(this.minimumPercentage) || this.minimumPercentage < 0 || this.minimumPercentage > 100)) {
       throw new ValidationError('minimumPercentage must be between 0 and 100.');
     }
-    if (accessPolicy === 'minimum_amount'
+    if (validate && accessPolicy === 'minimum_amount'
       && (!Number.isFinite(this.minimumAmount) || this.minimumAmount < 0)) {
       throw new ValidationError('minimumAmount must be a non-negative number.');
     }
