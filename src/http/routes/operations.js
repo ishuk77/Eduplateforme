@@ -177,13 +177,22 @@ export function registerOperationsRoutes(router, { service }) {
           actions: ['Consulter les traces', 'Ouvrir un ticket', 'Demander une opération externe']
         },
         {
-          id: 'domainReseller',
-          title: 'Abonnements, domaines et droits du titulaire',
-          audience: ['platform-admin', 'school-admin', 'university-admin', 'training-center-admin'],
+          id: 'domainSubscription',
+          title: 'Domaine et abonnement',
+          audience: ['school-admin', 'university-admin', 'training-center-admin'],
           permissions: ['saas.read', 'saas.write'],
           prerequisites: ['Organisation active', 'Catalogue TLD activé', 'Coordonnées et consentement du titulaire'],
           workflow: ['Choisir Essential, Professional ou Premium', 'Lire les lignes SaaS et domaine séparément', 'Demander un devis de disponibilité', 'Confirmer le titulaire institutionnel', 'Attendre le paiement authentifié puis le DNS et le TLS'],
           actions: ['Désactiver le renouvellement automatique', 'Demander un transfert sans perdre la propriété', 'Diagnostiquer DNS/TLS', 'Escalader un échec sans simuler une inscription']
+        },
+        {
+          id: 'platformDomainReseller',
+          title: 'Revente de domaines',
+          audience: ['platform-admin'],
+          permissions: ['Rôle platform-admin obligatoire'],
+          prerequisites: ['Contrat registrar et financement', 'Configuration serveur complète avant activation live'],
+          workflow: ['Contrôler fournisseur et solde', 'Publier les prix et marges', 'Réconcilier paiement et registrar', 'Superviser DNS/TLS', 'Traiter incidents et audit'],
+          actions: ['Confirmer un paiement avec motif', 'Soumettre au registrar', 'Diagnostiquer le provisionnement', 'Ouvrir un incident']
         }
       ],
       faq: [

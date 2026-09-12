@@ -87,3 +87,10 @@ le domaine : le transfert reste possible et la conservation des données suit la
 période de grâce contractuelle. Les remboursements exigent une réconciliation
 manuelle avec le paiement et le registrar; aucun échec fournisseur ne doit être
 présenté comme payé ou enregistré.
+
+Les administrateurs d’institution utilisent `/domain-subscription`, qui
+n’expose que les offres de détail et les données de leur institution. Le rôle
+`platform-admin` utilise `/platform/domain-reseller` pour le fournisseur, le
+solde, les coûts/marges, les commandes globales, les incidents et l’audit.
+L’ancien lien `/domain-reseller` est conservé comme redirection déterminée côté
+serveur selon le rôle.

@@ -158,8 +158,8 @@ function createOpenApiDescription() {
       '/calendar/events': { get: { summary: 'List calendar events' }, post: { summary: 'Create calendar event' } },
       '/subscriptions/platform': { get: { summary: 'List subscriptions' }, post: { summary: 'Create platform subscription' } }
       ,
-      '/domain-reseller/quotes': { post: { summary: 'Create an idempotent tenant-scoped domain availability quote' } },
-      '/domain-reseller/orders': { get: { summary: 'List tenant domain orders' }, post: { summary: 'Create an unpaid unified order with separate SaaS and domain line items' } },
+      '/domain-subscription/quotes': { post: { summary: 'Create an idempotent tenant-scoped domain availability quote' } },
+      '/domain-subscription/orders': { get: { summary: 'List tenant domain orders' }, post: { summary: 'Create an unpaid unified order with separate SaaS and domain line items' } },
       '/platform/domain-reseller/catalog': { get: { summary: 'List reseller TLD pricing' }, put: { summary: 'Create or update reseller TLD pricing' } },
       '/platform/domain-reseller/orders/{id}/payment': { post: { summary: 'Confirm a payment manually with platform-admin reason and audit' } },
       '/lms/catalogs': { get: { summary: 'List LMS catalogs' }, post: { summary: 'Create LMS catalog' } },
