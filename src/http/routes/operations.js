@@ -46,17 +46,59 @@ export function registerOperationsRoutes(router, { service }) {
 
   router.add('GET', '/support/help', async (request, url) => {
     const { organizationId } = getScopedOrganization(request, service, url.searchParams.get('organizationId'));
-    authorizeRequest(request, service, { organizationId, permissions: ['support.read'] });
+    authorizeRequest(request, service, { organizationId });
     return Response.json({
+      version: '1.0',
       guides: [
-        { id: 'getting-started', title: 'Premiers pas', audience: 'admin' },
-        { id: 'low-connectivity', title: 'Travailler avec une connexion faible', audience: 'all' },
-        { id: 'support-escalation', title: 'Escalade L1 à L4', audience: 'support' }
+        {
+          id: 'configuration',
+          title: 'Configuration de l’établissement',
+          audience: ['platform-admin', 'school-admin', 'university-admin', 'training-center-admin'],
+          permissions: ['organizations.write', 'institution.write', 'academics.write'],
+          prerequisites: ['Organisation active'],
+          workflow: ['Créer les sites', 'Créer l’année et les périodes', 'Créer niveaux, programmes, classes, matières et cours', 'Créer les identités et affecter les rôles'],
+          actions: ['Créer', 'Modifier', 'Archiver', 'Consulter l’historique']
+        },
+        {
+          id: 'daily-operations',
+          title: 'Opérations quotidiennes',
+          audience: ['admin', 'teacher', 'trainer', 'learner', 'student', 'parent', 'guardian'],
+          permissions: ['academics.read', 'attendance.read', 'grading.read', 'lms.read'],
+          prerequisites: ['Configuration académique terminée'],
+          workflow: ['Inscrire', 'Planifier et enseigner', 'Saisir présences et notes', 'Publier les documents'],
+          actions: ['Consulter', 'Saisir selon le rôle', 'Exporter lorsque permis']
+        },
+        {
+          id: 'bulk-import',
+          title: 'Imports CSV/XLSX',
+          audience: ['school-admin', 'university-admin', 'training-center-admin'],
+          permissions: ['academics.write'],
+          prerequisites: ['Connexion en ligne', 'Année/programme/classe créés', 'Fichier conforme au modèle'],
+          workflow: ['Télécharger le modèle', 'Choisir CSV ou XLSX', 'Prévisualiser et corriger toutes les erreurs', 'Confirmer puis appliquer', 'Télécharger immédiatement les identifiants temporaires'],
+          actions: ['Dry-run', 'Application transactionnelle', 'Export unique des identifiants']
+        },
+        {
+          id: 'governance',
+          title: 'Gouvernance et exploitation',
+          audience: ['platform-admin', 'admin', 'support'],
+          permissions: ['audit.read', 'operations.read', 'security.read'],
+          prerequisites: ['Permission explicite'],
+          workflow: ['Contrôler les événements', 'Suivre qualité et incidents', 'Vérifier sauvegardes et conformité'],
+          actions: ['Consulter les traces', 'Ouvrir un ticket', 'Demander une opération externe']
+        }
       ],
       faq: [
         { question: 'Quelles actions fonctionnent hors ligne ?', answer: 'Les brouillons explicitement autorisés; les données officielles exigent une connexion.' },
-        { question: 'Comment escalader un ticket ?', answer: 'Affectez le niveau L1, L2, L3 ou L4 et ajoutez un commentaire traçable.' }
-      ]
+        { question: 'Comment escalader un ticket ?', answer: 'Affectez le niveau L1, L2, L3 ou L4 et ajoutez un commentaire traçable.' },
+        { question: 'Pourquoi une liste est-elle indisponible ?', answer: 'Le prérequis doit être créé et vous devez disposer du droit de lecture correspondant. L’interface affiche un lien vers le module concerné.' },
+        { question: 'Les cinq langues sont-elles intégralement traduites ?', answer: 'La navigation générale et les états sont localisés. Certains libellés métier utilisent encore le français de référence comme fallback non vide.' }
+      ],
+      localeCoverage: {
+        supported: ['fr', 'en', 'es', 'pt', 'ar'],
+        rtl: ['ar'],
+        complete: false,
+        fallback: 'fr'
+      }
     });
   });
 

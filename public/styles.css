@@ -90,6 +90,8 @@ button:disabled { cursor: wait; opacity: .6; }
 .shell-nav[data-open="true"] { transform: translateX(0); }
 .tenant-name { margin: .5rem 0 1.4rem; color: #aebbd0; font-size: .88rem; }
 .nav-links { display: grid; gap: .35rem; }
+.nav-group { display: grid; gap: .25rem; margin-top: .85rem; }
+.nav-group h2 { margin: .35rem .8rem; color: #8fa1bc; font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; }
 .nav-link { display: grid; gap: .12rem; padding: .72rem .8rem; border-radius: .7rem; color: #dbe5f5; }
 .nav-link small { color: #8fa1bc; }
 .nav-link:hover, .nav-link.is-active { background: #1b2d4d; color: white; }
@@ -99,6 +101,15 @@ button:disabled { cursor: wait; opacity: .6; }
 .topbar { height: 4.5rem; display: flex; align-items: center; justify-content: space-between; width: min(72rem, calc(100% - 2rem)); margin: auto; }
 .menu-toggle { background: white; border-color: var(--border); color: var(--text); }
 .organization-chip { padding: .45rem .75rem; border-radius: 999px; background: #eaf0ff; color: var(--primary); font-size: .8rem; font-weight: 700; }
+.help-link { display: inline-flex; min-height: 44px; align-items: center; color: var(--primary); font-weight: 800; text-decoration: underline; text-underline-offset: .2rem; }
+.field-status { color: var(--muted); font-weight: 500; line-height: 1.35; }
+.field-status a { color: var(--primary); text-decoration: underline; }
+.action-grid { display: flex; flex-wrap: wrap; gap: .75rem; }
+.error-list { color: var(--danger); }
+.table-scroll { overflow-x: auto; margin-block: 1rem; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: .75rem; border-bottom: 1px solid var(--border); text-align: start; vertical-align: top; }
+td code { white-space: normal; overflow-wrap: anywhere; }
 .sync-status { color: var(--muted); font-size: .82rem; font-weight: 700; }
 .content-stack { width: min(72rem, calc(100% - 2rem)); margin: auto; padding-bottom: 2rem; display: grid; gap: 1rem; }
 .page-heading { padding: 1rem 0; }
@@ -153,6 +164,17 @@ button:disabled { cursor: wait; opacity: .6; }
   .form-grid, .data-card dl { grid-template-columns: 1fr; }
   .form-grid > * { grid-column: 1; }
   .hero-actions > *, .form-actions > * { width: 100%; }
+}
+
+html[dir="rtl"] .shell-nav { inset: 0 0 0 auto; transform: translateX(105%); }
+html[dir="rtl"] .shell-nav[data-open="true"] { transform: translateX(0); }
+html[dir="rtl"] .public-brand { left: auto; right: 1.25rem; }
+html[dir="rtl"] .landing-panel ul, html[dir="rtl"] .record-history ul { padding-left: 0; padding-right: 1.2rem; }
+
+@media (min-width: 980px) {
+  html[dir="rtl"] .app-shell { grid-template-columns: minmax(0, 1fr) 18rem; }
+  html[dir="rtl"] .shell-nav { grid-column: 2; transform: none; }
+  html[dir="rtl"] .shell-main { grid-column: 1; grid-row: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

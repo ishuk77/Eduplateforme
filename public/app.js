@@ -9,6 +9,10 @@ const state = {
   offlineQueue: JSON.parse(window.localStorage.getItem('eduplateforme.offlineQueue') ?? '[]')
 };
 
+const SUPPORTED_LOCALES = ['fr', 'en', 'es', 'pt', 'ar'];
+const COUNTRY_CODES = ['BE', 'BR', 'CA', 'CD', 'CI', 'CM', 'DZ', 'ES', 'FR', 'GB', 'GH', 'GN', 'HT', 'KE', 'MA', 'ML', 'MX', 'NG', 'PT', 'RW', 'SN', 'TN', 'UG', 'US'];
+if (!SUPPORTED_LOCALES.includes(state.locale)) state.locale = 'fr';
+
 const translations = {
   en: {
     dashboard: ['Dashboard', 'Overview'],
@@ -33,6 +37,21 @@ const translations = {
     empty: 'Aucune donnée',
     emptyHint: 'Utilisez le formulaire ci-dessus pour créer le premier élément autorisé par l’API.',
     noResults: 'Aucun résultat enregistré pour le moment.'
+  },
+  es: {
+    logout: 'Cerrar sesión', activeOrganization: 'Organización activa', loading: 'Cargando datos…',
+    add: 'Añadir', empty: 'Sin datos', emptyHint: 'Cree primero los requisitos indicados.',
+    noResults: 'Todavía no hay resultados.'
+  },
+  pt: {
+    logout: 'Sair', activeOrganization: 'Organização ativa', loading: 'A carregar dados…',
+    add: 'Adicionar', empty: 'Sem dados', emptyHint: 'Crie primeiro os pré-requisitos indicados.',
+    noResults: 'Ainda não há resultados.'
+  },
+  ar: {
+    logout: 'تسجيل الخروج', activeOrganization: 'المؤسسة النشطة', loading: 'جارٍ تحميل البيانات…',
+    add: 'إضافة', empty: 'لا توجد بيانات', emptyHint: 'أنشئ المتطلبات الأساسية أولاً.',
+    noResults: 'لا توجد نتائج حتى الآن.'
   }
 };
 
@@ -44,6 +63,40 @@ function moduleLabel(module, part = 0) {
   return translations[state.locale]?.[module.id]?.[part]
     ?? (part === 0 ? module.label : module.eyebrow);
 }
+
+function applyLocale() {
+  document.documentElement.lang = state.locale;
+  document.documentElement.dir = state.locale === 'ar' ? 'rtl' : 'ltr';
+}
+
+function countryFlag(countryCode) {
+  const code = String(countryCode ?? '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return '🏳️';
+  return String.fromCodePoint(...[...code].map((character) => 127397 + character.charCodeAt(0)));
+}
+
+function countryName(countryCode) {
+  const code = String(countryCode ?? '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return code || '—';
+  try {
+    return new Intl.DisplayNames([state.locale, 'fr'], { type: 'region' }).of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+function countryIndicator(countryCode) {
+  const code = String(countryCode ?? '').toUpperCase();
+  return `${countryFlag(code)} ${countryName(code)} (${code || '—'})`;
+}
+
+function countryOptions(selected = '') {
+  return COUNTRY_CODES.map((code) =>
+    `<option value="${code}" ${code === String(selected).toUpperCase() ? 'selected' : ''}>${escapeHtml(countryIndicator(code))}</option>`
+  ).join('');
+}
+
+applyLocale();
 
 const modules = [
   {
@@ -68,7 +121,7 @@ const modules = [
         ['administrativeAuthority', 'Autorité administrative', 'text', false],
         ['operationalStatus', 'Statut opérationnel', 'text', false]
       ],
-      columns: ['displayName', 'internalReference', 'nationalInstitutionId', 'registrationNumber', 'operationalStatus', 'status']
+      columns: ['displayName', 'countryCode', 'internalReference', 'nationalInstitutionId', 'registrationNumber', 'operationalStatus', 'status']
     }]
   },
   {
@@ -877,8 +930,9 @@ function onboarding() {
           <label>Nom légal<input name="legalName" required minlength="2"></label>
           <label>Nom affiché<input name="displayName" required minlength="2"></label>
           <label>Référence interne<input name="internalReference" required minlength="2" placeholder="ECOLE-001"></label>
-          <label>Code pays<input name="countryCode" required minlength="2" maxlength="2" value="FR"></label>
-          <label>Type<select name="organizationType"><option value="institution">Établissement</option><option value="school">École</option><option value="campus">Campus</option></select></label>
+          <label>Pays<select name="countryCode" required>${countryOptions('FR')}</select></label>
+          <label>Langue de l’espace<select name="locale">${SUPPORTED_LOCALES.map((locale) => `<option value="${locale}" ${state.locale === locale ? 'selected' : ''}>${locale.toUpperCase()}</option>`).join('')}</select></label>
+          <label>Type<select name="organizationType"><option value="institution">Établissement</option><option value="school">École</option><option value="university">Université</option><option value="training-center">Centre de formation</option><option value="campus">Campus</option></select></label>
           <label>Identifiant national<input name="nationalInstitutionId"></label>
           <label>Immatriculation<input name="registrationNumber"></label>
           <label>Identifiant fiscal<input name="taxIdentifier"></label>
@@ -895,6 +949,19 @@ function onboarding() {
 
 function shell(content, activeId = 'dashboard') {
   const profile = state.user?.profile;
+  const navigationGroups = [
+    { label: 'Configuration', ids: ['organizations', 'institution', 'i18n', 'references', 'academics', 'people', 'profiles'] },
+    { label: 'Opérations quotidiennes', ids: ['scheduling', 'assignments', 'attendance', 'grading', 'lms', 'virtualSchools', 'finance', 'communications', 'notifications', 'documents', 'reports', 'certificates', 'calendar', 'discipline', 'parentalConsents'] },
+    { label: 'Gouvernance & exploitation', ids: ['analytics', 'dataQuality', 'emis', 'meetings', 'saas', 'operations', 'ai', 'audit', 'support'] }
+  ];
+  const moduleById = new Map(modules.map((module) => [module.id, module]));
+  const navigation = navigationGroups.map((group) => {
+    const links = group.ids.map((id) => moduleById.get(id))
+      .filter((module) => module?.resources.some((resource) => can(resource.read)));
+    if (links.length === 0) return '';
+    return `<section class="nav-group"><h2>${group.label}</h2>${links.map((module) => `<a class="nav-link ${activeId === module.id ? 'is-active' : ''}" href="${module.path}"><span>${moduleLabel(module)}</span><small>${moduleLabel(module, 1)}</small></a>`).join('')}</section>`;
+  }).join('');
+  const organization = state.user?.organization;
   return `
     <div class="app-shell">
       <aside class="shell-nav" id="shell-nav" data-open="false" aria-label="Navigation principale">
@@ -902,7 +969,9 @@ function shell(content, activeId = 'dashboard') {
         <p class="tenant-name">${escapeHtml(profile ? `${profile.givenName} ${profile.familyName}` : state.user?.username)}</p>
         <nav class="nav-links">
           <a class="nav-link ${activeId === 'dashboard' ? 'is-active' : ''}" href="/dashboard"><span>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' })}</span><small>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' }, 1)}</small></a>
-          ${modules.filter((module) => module.resources.some((resource) => can(resource.read))).map((module) => `<a class="nav-link ${activeId === module.id ? 'is-active' : ''}" href="${module.path}"><span>${moduleLabel(module)}</span><small>${moduleLabel(module, 1)}</small></a>`).join('')}
+          ${navigation}
+          ${can('academics.write') && can('people.write') && can('accounts.write') ? `<a class="nav-link ${activeId === 'imports' ? 'is-active' : ''}" href="/imports"><span>Imports CSV/XLSX</span><small>Inscriptions et équipes</small></a>` : ''}
+          <a class="nav-link ${activeId === 'help' ? 'is-active' : ''}" href="/help"><span>Guide des modules</span><small>Aide contextuelle</small></a>
         </nav>
         <button id="logout" class="logout-button" type="button">${t('logout')}</button>
       </aside>
@@ -910,9 +979,9 @@ function shell(content, activeId = 'dashboard') {
       <div class="shell-main">
         <header class="topbar">
           <button class="menu-toggle" id="menu-toggle" type="button" aria-controls="shell-nav" aria-expanded="false">Menu</button>
-          <label><span class="sr-only">Language</span><select id="locale-switch" aria-label="Language"><option value="fr" ${state.locale === 'fr' ? 'selected' : ''}>FR</option><option value="en" ${state.locale === 'en' ? 'selected' : ''}>EN</option></select></label>
+          <label><span class="sr-only">Language</span><select id="locale-switch" aria-label="Language">${SUPPORTED_LOCALES.map((locale) => `<option value="${locale}" ${state.locale === locale ? 'selected' : ''}>${locale.toUpperCase()}</option>`).join('')}</select></label>
           <span id="sync-status" class="sync-status" role="status">${navigator.onLine ? 'En ligne' : 'Hors ligne'} · ${state.offlineQueue.length} en attente</span>
-          <span class="organization-chip">${escapeHtml(state.user?.organizationId ? t('activeOrganization') : 'Configuration requise')}</span>
+          <span class="organization-chip">${organization ? `${escapeHtml(countryFlag(organization.countryCode))} ${escapeHtml(organization.displayName || t('activeOrganization'))} · ${escapeHtml(organization.countryCode)}` : 'Configuration requise'}</span>
         </header>
         <div id="feedback" class="feedback global-feedback" role="alert" tabindex="-1" hidden></div>
         ${content}
@@ -923,9 +992,27 @@ function shell(content, activeId = 'dashboard') {
 function fieldInput(field, record = {}) {
   const [name, label, type, required, source, optionLabel] = field;
   const value = record[name] ?? '';
+  if (name === 'countryCode') {
+    return `<label>${label}<select name="${name}" ${required ? 'required' : ''}><option value="">Sélectionner…</option>${countryOptions(value)}</select></label>`;
+  }
+  if (name === 'preferredLocale' || name === 'language') {
+    return `<label>${label}<select name="${name}" ${required ? 'required' : ''}><option value="">Sélectionner…</option>${SUPPORTED_LOCALES.map((locale) => `<option value="${locale}" ${locale === value ? 'selected' : ''}>${locale.toUpperCase()}</option>`).join('')}</select></label>`;
+  }
   if (type === 'reference') {
-    const items = state.references.get(source)?.items ?? [];
-    return `<label>${label}<select name="${name}" ${required ? 'required' : ''}><option value="">Sélectionner…</option>${items.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === value ? 'selected' : ''}>${escapeHtml(item[optionLabel] || item.id)}</option>`).join('')}</select></label>`;
+    const reference = state.references.get(source);
+    const items = reference?.items ?? [];
+    const prerequisitePath = source.startsWith('/academics/') ? '/academics'
+      : source.startsWith('/profiles/') ? '/profiles'
+        : source.startsWith('/institution/') ? '/institution'
+          : source.startsWith('/finance/') ? '/finance'
+            : source.startsWith('/lms/') ? '/lms'
+              : source;
+    const status = reference?.error
+      ? `Erreur de chargement. <a href="${prerequisitePath}">Réessayer dans le module source</a>.`
+      : items.length === 0
+        ? `Aucune option autorisée. <a href="${prerequisitePath}">Créer le prérequis</a>.`
+        : `${items.length} option(s) disponible(s).`;
+    return `<label>${label}<select name="${name}" ${required ? 'required' : ''} ${items.length === 0 ? 'disabled' : ''}><option value="">${reference?.error ? 'Erreur de chargement' : items.length === 0 ? 'Aucune option disponible' : 'Sélectionner…'}</option>${items.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === value ? 'selected' : ''}>${escapeHtml(item[optionLabel] || item.id || 'Sans libellé')}</option>`).join('')}</select><small class="field-status" role="status">${status}</small></label>`;
   }
   if (type === 'select') {
     return `<label>${label}<select name="${name}" ${required ? 'required' : ''}><option value="">Sélectionner…</option>${source.map((option) => `<option value="${option}" ${option === value ? 'selected' : ''}>${option}</option>`).join('')}</select></label>`;
@@ -949,17 +1036,17 @@ function resourceSection(resource) {
   const payload = state.resources.get(resource.id) ?? { items: [], page: { total: 0 } };
   const rows = payload.items.map((record) => `
     <article class="data-card" data-id="${escapeHtml(record.id)}">
-      <dl>${resource.columns.map((column) => `<div><dt>${escapeHtml(column)}</dt><dd>${formatValue(record[column])}</dd></div>`).join('')}</dl>
+      <dl>${resource.columns.map((column) => `<div><dt>${escapeHtml(column)}</dt><dd>${column === 'countryCode' ? escapeHtml(countryIndicator(record[column])) : formatValue(record[column])}</dd></div>`).join('')}</dl>
       ${can(resource.write) && resource.action && (!resource.action.show || resource.action.show(record)) ? `
         <form class="inline-action-form" data-record-action="${resource.id}" data-id="${escapeHtml(record.id)}">
           ${resource.action.fields.map((field) => fieldInput(field)).join('')}
           <button class="secondary-button" type="submit">${typeof resource.action.label === 'function' ? resource.action.label(record) : resource.action.label}</button>
         </form>` : ''}
-      ${resource.history !== false ? `<div class="row-actions"><button type="button" data-action="history" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Historique</button>${can(resource.write) && !resource.createOnly ? `<button type="button" data-action="edit" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Modifier</button><button class="danger-link" type="button" data-action="archive" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Archiver</button>` : ''}</div><div class="record-history" aria-live="polite"></div>` : ''}
+      ${resource.history !== false ? `<div class="row-actions"><button type="button" data-action="history" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Historique</button>${can(resource.write) && !resource.createOnly ? `<button type="button" data-action="edit" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Modifier</button><button class="danger-link" type="button" data-action="archive" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Archiver</button>` : ''}${resource.id === 'classes' && can('academics.write') && can('people.write') && can('accounts.write') ? `<a class="secondary-button" href="/imports?kind=class-roster&classId=${encodeURIComponent(record.id)}">Importer la liste</a>` : ''}</div><div class="record-history" aria-live="polite"></div>` : ''}
     </article>`).join('');
   return `
     <section class="surface-card resource-section" id="resource-${resource.id}">
-      <div class="section-header"><div><p class="section-label">${payload.page.total} élément(s)</p><h2>${resource.title}</h2></div></div>
+      <div class="section-header"><div><p class="section-label">${payload.page.total} élément(s)</p><h2>${resource.title}</h2></div><a class="help-link" href="/help#${resource.id}">Aide</a></div>
       ${resource.summary ? `<p class="resource-summary" role="status">${escapeHtml(resource.summary(payload.items))}</p>` : ''}
       ${can(resource.write) && resource.create !== false ? `
         <details class="editor-panel">
@@ -982,7 +1069,12 @@ async function loadReferences(module) {
   ))];
   await Promise.all(paths.map(async (path) => {
     if (state.references.has(path)) return;
-    state.references.set(path, await apiRequest(`${path}?limit=200`));
+    state.references.set(path, { items: [], loading: true });
+    try {
+      state.references.set(path, await apiRequest(`${path}?limit=200`));
+    } catch (error) {
+      state.references.set(path, { items: [], page: { total: 0 }, error: error.message });
+    }
   }));
 }
 
@@ -1029,7 +1121,7 @@ async function modulePage(module) {
           <details><summary>Escalade</summary><p>L1 traite l’usage, L2 la configuration, L3 l’application et L4 les fournisseurs.</p></details>
         </section>`;
     }
-    app.innerHTML = shell(`<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">${moduleLabel(module, 1)}</p><h1>${moduleLabel(module)}</h1><p>${module.description}</p></section>${supplement}${module.resources.map(resourceSection).join('')}</main>`, module.id);
+    app.innerHTML = shell(`<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">${moduleLabel(module, 1)}</p><h1>${moduleLabel(module)}</h1><p>${module.description}</p><a class="help-link" href="/help#${module.id}">Ouvrir le guide de ce module</a></section>${supplement}${module.resources.map(resourceSection).join('')}</main>`, module.id);
     bindShell();
     bindResources(module);
     document.querySelectorAll('[data-analytics-export]').forEach((button) => {
@@ -1062,10 +1154,166 @@ async function dashboard() {
     };
     app.innerHTML = shell(`
       <main class="content-stack" id="main-content">
-        <section class="page-heading"><p class="section-label">Pilotage · ${escapeHtml(roleDashboard.role)}</p><h1>Tableau de bord</h1><p>Chaque carte dépend du rôle, des permissions et des données réellement disponibles.</p></section>
+        <section class="page-heading"><p class="section-label">Pilotage · ${escapeHtml(roleDashboard.experienceRole ?? roleDashboard.role)}</p><h1>Tableau de bord</h1><p>Chaque carte dépend du rôle, des permissions et des données réellement disponibles.</p></section>
         <section class="metric-grid">${roleDashboard.cards.map(({ metric, value }) => `<article class="metric-card surface-card"><span>${labels[metric] ?? metric}</span><strong>${value ?? '—'}</strong><small>${value == null ? 'Non disponible ou masqué' : 'Donnée tenant calculée'}</small></article>`).join('') || '<p class="empty-state">Aucun indicateur autorisé.</p>'}</section>
-        <section class="surface-card quick-start"><h2>Modules autorisés</h2><p>${roleDashboard.availableModules.map(escapeHtml).join(' · ') || 'Aucun module opérationnel supplémentaire.'}</p></section>
+        <section class="surface-card quick-start"><h2>Prochaines actions</h2><div class="action-grid">${roleDashboard.nextSteps.map((step) => `<a class="secondary-button" href="${escapeHtml(step.path)}">${escapeHtml(step.label)}</a>`).join('') || '<p>Aucune action supplémentaire autorisée.</p>'}</div></section>
+        <section class="surface-card quick-start"><h2>Espaces autorisés</h2><p>${roleDashboard.availableModules.map(escapeHtml).join(' · ') || 'Aucun module opérationnel supplémentaire.'}</p></section>
       </main>`);
+    bindShell();
+  } catch (error) {
+    notification(error.message, 'error');
+  }
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function downloadText(filename, text, contentType = 'text/csv;charset=utf-8') {
+  const url = URL.createObjectURL(new Blob([text], { type: contentType }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadImportTemplate(kind) {
+  const response = await fetch(`/imports/templates/${encodeURIComponent(kind)}`, {
+    headers: { authorization: `Bearer ${state.token}` }
+  });
+  if (!response.ok) throw new Error('Impossible de télécharger le modèle.');
+  downloadText(`${kind}-import-template.csv`, await response.text());
+}
+
+function renderImportResult(result) {
+  return `
+    <div class="resource-summary" role="status">${result.dryRun ? 'Aperçu sans écriture' : 'Import appliqué'} · ${result.summary.valid}/${result.summary.total} ligne(s) valide(s) · ${result.summary.invalid} erreur(s)</div>
+    ${result.errors.length ? `<ul class="error-list">${result.errors.map((error) => `<li><strong>Ligne ${error.rowNumber}</strong> — ${escapeHtml(error.message)}</li>`).join('')}</ul>` : ''}
+    <div class="table-scroll"><table><thead><tr><th>Ligne</th><th>État</th><th>Données</th></tr></thead><tbody>${result.rows.map((row) => `<tr><td>${row.rowNumber}</td><td>${row.errors?.length ? 'À corriger' : 'Valide'}</td><td><code>${escapeHtml(JSON.stringify(row.values ?? row.created ?? row))}</code></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+async function importsPage() {
+  app.innerHTML = shell('<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">Opérations quotidiennes</p><h1>Imports CSV/XLSX</h1><p>Chargement des classes autorisées…</p></section></main>', 'imports');
+  bindShell();
+  const selected = new URLSearchParams(window.location.search);
+  const initialKind = ['learners', 'staff', 'class-roster'].includes(selected.get('kind')) ? selected.get('kind') : 'learners';
+  let classes = { items: [] };
+  try {
+    classes = await apiRequest('/academics/classes?limit=200');
+  } catch (error) {
+    notification(error.message, 'error');
+  }
+  app.innerHTML = shell(`
+    <main class="content-stack" id="main-content">
+      <section class="page-heading"><p class="section-label">Opérations quotidiennes</p><h1>Imports CSV/XLSX</h1><p>Les imports officiels nécessitent une connexion, un aperçu sans écriture et une confirmation explicite.</p><a class="help-link" href="/help#bulk-import">Lire le guide et les schémas</a></section>
+      <section class="surface-card resource-section">
+        <h2>1. Préparer et prévisualiser</h2>
+        <form id="import-form" class="form-grid">
+          <label>Type d’import<select name="kind"><option value="learners" ${initialKind === 'learners' ? 'selected' : ''}>Apprenants / étudiants</option><option value="class-roster" ${initialKind === 'class-roster' ? 'selected' : ''}>Liste d’une classe</option><option value="staff" ${initialKind === 'staff' ? 'selected' : ''}>Enseignants / formateurs</option></select></label>
+          <label>Classe cible<select name="classId"><option value="">Selon classCode du fichier</option>${classes.items.map((item) => `<option value="${escapeHtml(item.id)}" ${selected.get('classId') === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.code || item.id)}</option>`).join('')}</select><small class="field-status">${classes.items.length ? `${classes.items.length} classe(s) autorisée(s).` : 'Aucune classe disponible. Créez année, programme et classe avant un import d’apprenants.'}</small></label>
+          <label class="form-wide">Fichier CSV ou XLSX (5 Mio, 1 000 lignes maximum)<input name="file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
+          <div class="form-actions form-wide"><button class="secondary-button" id="template-download" type="button">Télécharger le modèle CSV</button><button class="primary-button" type="submit">Prévisualiser sans écrire</button></div>
+        </form>
+      </section>
+      <section class="surface-card resource-section" id="import-result" aria-live="polite"><h2>2. Résultat de validation</h2><p>Aucun fichier prévisualisé.</p></section>
+    </main>`, 'imports');
+  bindShell();
+
+  const form = document.querySelector('#import-form');
+  const resultRegion = document.querySelector('#import-result');
+  let pendingPayload = null;
+  document.querySelector('#template-download').addEventListener('click', async () => {
+    try {
+      await downloadImportTemplate(new FormData(form).get('kind'));
+    } catch (error) {
+      notification(error.message, 'error');
+    }
+  });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!navigator.onLine) {
+      notification('Une connexion est requise pour prévisualiser et appliquer un import officiel.', 'error');
+      return;
+    }
+    const data = new FormData(form);
+    const file = data.get('file');
+    if (!(file instanceof File) || file.size === 0) {
+      notification('Sélectionnez un fichier CSV ou XLSX.', 'error');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      notification('Le fichier dépasse la limite de 5 Mio.', 'error');
+      return;
+    }
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    resultRegion.innerHTML = '<h2>Validation en cours…</h2>';
+    try {
+      pendingPayload = {
+        organizationId: state.user.organizationId,
+        kind: data.get('kind'),
+        classId: data.get('classId') || null,
+        fileName: file.name,
+        contentBase64: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
+        idempotencyKey: crypto.randomUUID()
+      };
+      const preview = await apiRequest('/imports/preview', { method: 'POST', body: JSON.stringify(pendingPayload) });
+      resultRegion.innerHTML = `<h2>2. Résultat de validation</h2>${renderImportResult(preview)}${preview.summary.invalid === 0 ? '<button class="primary-button" id="apply-import" type="button">Confirmer et appliquer en ligne</button>' : '<p>Corrigez toutes les erreurs avant l’application.</p>'}`;
+      document.querySelector('#apply-import')?.addEventListener('click', async (applyEvent) => {
+        if (!navigator.onLine || !window.confirm('Confirmer l’import officiel de toutes les lignes valides ?')) return;
+        applyEvent.currentTarget.disabled = true;
+        try {
+          const applied = await apiRequest('/imports/apply', {
+            method: 'POST',
+            body: JSON.stringify({ ...pendingPayload, confirmed: true })
+          });
+          resultRegion.innerHTML = `<h2>Import terminé</h2>${renderImportResult(applied)}${applied.credentials?.length ? '<button class="primary-button" id="credentials-download" type="button">Télécharger les identifiants temporaires (une fois)</button>' : ''}`;
+          if (applied.credentials?.length) {
+            let credentials = applied.credentials;
+            document.querySelector('#credentials-download').addEventListener('click', (downloadEvent) => {
+              const escape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+              downloadText(`identifiants-${applied.batchId}.csv`, [
+                'rowNumber,username,email,temporaryPassword',
+                ...credentials.map((item) => [item.rowNumber, item.username, item.email, item.temporaryPassword].map(escape).join(','))
+              ].join('\n'));
+              credentials = [];
+              applied.credentials = [];
+              downloadEvent.currentTarget.disabled = true;
+              downloadEvent.currentTarget.textContent = 'Identifiants téléchargés';
+            }, { once: true });
+          }
+          pendingPayload = null;
+        } catch (error) {
+          notification(error.message, 'error');
+          applyEvent.currentTarget.disabled = false;
+        }
+      });
+    } catch (error) {
+      pendingPayload = null;
+      resultRegion.innerHTML = `<h2>Validation impossible</h2><p class="feedback feedback--error">${escapeHtml(error.message)}</p>`;
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
+async function helpPage() {
+  app.innerHTML = shell('<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">Aide</p><h1>Guide des modules</h1><p>Chargement du guide versionné…</p></section></main>', 'help');
+  bindShell();
+  try {
+    const help = await apiRequest('/support/help');
+    app.innerHTML = shell(`
+      <main class="content-stack" id="main-content">
+        <section class="page-heading"><p class="section-label">Guide v${escapeHtml(help.version)}</p><h1>Guide des modules</h1><p>Permissions, prérequis, actions et parcours recommandés. La traduction métier est progressive avec fallback français non vide.</p></section>
+        ${help.guides.map((guide) => `<section class="surface-card resource-section" id="${escapeHtml(guide.id)}"><p class="section-label">${escapeHtml(guide.audience.join(' · '))}</p><h2>${escapeHtml(guide.title)}</h2><p><strong>Permissions :</strong> ${guide.permissions.map(escapeHtml).join(', ')}</p><p><strong>Prérequis :</strong> ${guide.prerequisites.map(escapeHtml).join(' → ')}</p><ol>${guide.workflow.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol><p><strong>Actions :</strong> ${guide.actions.map(escapeHtml).join(' · ')}</p></section>`).join('')}
+        <section class="surface-card resource-section"><h2>Questions fréquentes</h2>${help.faq.map((item) => `<details><summary>${escapeHtml(item.question)}</summary><p>${escapeHtml(item.answer)}</p></details>`).join('')}</section>
+      </main>`, 'help');
     bindShell();
   } catch (error) {
     notification(error.message, 'error');
@@ -1089,9 +1337,14 @@ function bindShell() {
       toggle?.focus();
     }
   }, { once: true });
-  document.querySelector('#locale-switch')?.addEventListener('change', (event) => {
+  document.querySelector('#locale-switch')?.addEventListener('change', async (event) => {
     state.locale = event.target.value;
     window.localStorage.setItem('eduplateforme.locale', state.locale);
+    applyLocale();
+    await apiRequest('/auth/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ locale: state.locale })
+    }).catch(() => {});
     window.location.reload();
   });
   document.querySelector('#logout')?.addEventListener('click', async () => {
@@ -1252,7 +1505,9 @@ async function loadCurrentUser() {
     state.user = await apiRequest('/auth/me');
     if (!window.localStorage.getItem('eduplateforme.locale')) {
       const profile = await apiRequest('/i18n/profile').catch(() => null);
-      state.locale = profile?.language ?? state.user.profile?.preferredLocale ?? state.locale;
+      state.locale = state.user.locale ?? profile?.language ?? state.user.profile?.preferredLocale ?? state.locale;
+      if (!SUPPORTED_LOCALES.includes(state.locale)) state.locale = 'fr';
+      applyLocale();
     }
     return true;
   } catch {
@@ -1265,7 +1520,7 @@ async function loadCurrentUser() {
 async function route() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
   const publicPath = path === '/' || path === '/login' || path === '/register'
-    || path === '/verify-institution' || path === '/verify-credential';
+    || path === '/verify-institution' || path === '/verify-credential' || path === '/password-change';
   const authenticationEntryPath = path === '/' || path === '/login' || path === '/register';
   const authenticated = await loadCurrentUser();
 
@@ -1312,7 +1567,7 @@ async function route() {
           <dl>
             <div><dt>Statut</dt><dd>${escapeHtml(result.status)}</dd></div>
             <div><dt>Nom légal</dt><dd>${escapeHtml(result.institution.legalName)}</dd></div>
-            <div><dt>Pays</dt><dd>${escapeHtml(result.institution.countryCode)}</dd></div>
+            <div><dt>Pays</dt><dd>${escapeHtml(countryIndicator(result.institution.countryCode))}</dd></div>
             <div><dt>Autorité</dt><dd>${formatValue(result.authority)}</dd></div>
           </dl>`;
       } catch (error) {
@@ -1397,6 +1652,11 @@ async function route() {
             <button class="primary-button" type="submit">Valider le second facteur</button>`;
           return;
         }
+        if (payload.passwordChangeRequired) {
+          window.sessionStorage.setItem('eduplateforme.passwordChangeChallenge', payload.challengeToken);
+          window.location.assign('/password-change');
+          return;
+        }
         setToken(payload.accessToken);
         state.user = payload.user;
         window.location.assign(kind === 'register' ? '/onboarding' : '/dashboard');
@@ -1404,6 +1664,49 @@ async function route() {
         notification(error.message, 'error');
         button.disabled = false;
         button.textContent = kind === 'register' ? 'Créer mon compte' : 'Se connecter';
+      }
+    });
+    return;
+  }
+  if (path === '/password-change') {
+    const challengeToken = window.sessionStorage.getItem('eduplateforme.passwordChangeChallenge');
+    if (!challengeToken) {
+      window.location.replace('/login');
+      return;
+    }
+    app.innerHTML = `
+      <main class="public-layout" id="main-content">
+        <a class="brand-mark public-brand" href="/">Eduplateforme</a>
+        <section class="auth-card surface-card">
+          <p class="section-label">Première connexion</p>
+          <h1>Remplacez le mot de passe temporaire</h1>
+          <p class="section-copy">Définissez un mot de passe personnel d’au moins 10 caractères avant tout accès aux données.</p>
+          <div id="feedback" class="feedback" role="alert" tabindex="-1" hidden></div>
+          <form id="password-change-form" class="form-grid">
+            <label class="form-wide">Nouveau mot de passe<input name="password" type="password" minlength="10" autocomplete="new-password" required></label>
+            <label class="form-wide">Confirmation<input name="confirmation" type="password" minlength="10" autocomplete="new-password" required></label>
+            <button class="primary-button" type="submit">Enregistrer et continuer</button>
+          </form>
+        </section>
+      </main>`;
+    document.querySelector('#password-change-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const values = new FormData(event.currentTarget);
+      if (values.get('password') !== values.get('confirmation')) {
+        notification('Les mots de passe ne correspondent pas.', 'error');
+        return;
+      }
+      try {
+        const payload = await apiRequest('/auth/password/change-required', {
+          method: 'POST',
+          body: JSON.stringify({ challengeToken, password: values.get('password') })
+        }, false);
+        window.sessionStorage.removeItem('eduplateforme.passwordChangeChallenge');
+        setToken(payload.accessToken);
+        state.user = payload.user;
+        window.location.assign('/dashboard');
+      } catch (error) {
+        notification(error.message, 'error');
       }
     });
     return;
@@ -1438,6 +1741,14 @@ async function route() {
   }
   if (path === '/dashboard') {
     await dashboard();
+    return;
+  }
+  if (path === '/imports') {
+    await importsPage();
+    return;
+  }
+  if (path === '/help') {
+    await helpPage();
     return;
   }
   const module = modules.find((candidate) => candidate.path === path);

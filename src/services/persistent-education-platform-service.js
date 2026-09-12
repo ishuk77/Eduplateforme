@@ -87,6 +87,7 @@ import {
   hashRecoveryCode,
   verifyTotp
 } from '../security/totp.js';
+import { executeBulkImport } from './bulk-import-service.js';
 
 const COLLECTIONS = {
   organizations: { hydrate: (value) => new Organization(value), repository: (connection) => new OrganizationRepository({ connection }) },
@@ -180,6 +181,7 @@ const COLLECTIONS = {
   aiAssistanceRequests: { hydrate: (value) => new OperationalRecord(value), sensitive: true },
   incidents: { hydrate: (value) => new OperationalRecord(value) },
   syncJournal: { hydrate: (value) => new OperationalRecord(value), sensitive: true },
+  importBatches: { hydrate: (value) => ({ ...value }), sensitive: true },
   events: { hydrate: (value) => new DomainEvent(value), isArray: true }
 };
 
@@ -280,7 +282,8 @@ const RESOURCE_TO_COLLECTION = {
   backupOperations: 'backupOperations',
   aiAssistanceRequests: 'aiAssistanceRequests',
   incidents: 'incidents',
-  syncJournal: 'syncJournal'
+  syncJournal: 'syncJournal',
+  importBatches: 'importBatches'
 };
 
 const RESOURCE_ORGANIZATION_RESOLVER = {
@@ -1372,10 +1375,21 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       const person = this.people.get(account.personId);
       const organization = FoundationService.prototype.createOrganization.call(
         this,
-        organizationInput,
+        { ...organizationInput, countryCode: organizationInput.countryCode.toUpperCase() },
         account.id
       );
       this.recordCreate('organizations', organization, account.id, 'organization.onboard');
+
+      const localization = new LocalizationProfile({
+        organizationId: organization.id,
+        userId: account.id,
+        countryCode: organization.countryCode,
+        city: organizationInput.headquartersAddress?.city ?? 'Not configured',
+        language: organizationInput.locale ?? 'fr',
+        currency: organizationInput.currency ?? 'USD',
+        timezone: organizationInput.timezone ?? 'UTC'
+      });
+      this.recordCreate('localizationProfiles', localization, account.id, 'localization.onboard');
 
       const personBefore = cloneRecord(person);
       person.primaryOrganizationId = organization.id;
@@ -1386,6 +1400,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       const accountBefore = cloneRecord(account);
       account.organizationIds = [organization.id];
       account.organizationId = organization.id;
+      account.metadata = { ...account.metadata, locale: organizationInput.locale ?? 'fr' };
       account.touch();
       this.recordUpdate('accounts', accountBefore, account, account.id, 'account.onboard');
       this.connection.run(
@@ -1519,6 +1534,17 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       throw new ValidationError('Account is not allowed to access this organization.');
     }
 
+    if (account.metadata?.forcePasswordChange === true) {
+      return {
+        passwordChangeRequired: true,
+        challengeToken: signJwt({
+          sub: account.id,
+          organizationId: resolvedOrganizationId,
+          purpose: 'password-change'
+        }, { expiresInSeconds: 600 })
+      };
+    }
+
     await this.writeAuditEntry({
       actorId: account.id,
       organizationId: resolvedOrganizationId,
@@ -1544,6 +1570,51 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     }
 
     return this.createAuthenticationSession(account, resolvedOrganizationId);
+  }
+
+  async completeRequiredPasswordChange(challengeToken, password) {
+    if (typeof password !== 'string' || password.length < 10) {
+      throw new ValidationError('password must contain at least 10 characters.');
+    }
+    const payload = verifyJwt(challengeToken);
+    if (!payload || payload.purpose !== 'password-change') {
+      throw new ValidationError('Password change challenge is invalid or expired.');
+    }
+    const account = this.accounts.get(payload.sub);
+    if (!account?.metadata?.forcePasswordChange) {
+      throw new ValidationError('Password change is not required for this account.');
+    }
+    const updatePassword = async () => {
+      const before = cloneRecord(account);
+      await this.setLocalPassword(account.id, password);
+      account.metadata = { ...account.metadata, forcePasswordChange: false, passwordChangedAt: new Date().toISOString() };
+      account.touch();
+      await this.recordUpdate('accounts', before, account, account.id, 'account.password-change-required-complete');
+      await this.writeAuditEntry({
+        actorId: account.id,
+        organizationId: payload.organizationId ?? null,
+        entityType: 'UserAccount',
+        entityId: account.id,
+        action: 'auth.password.changed',
+        after: { forcePasswordChange: false }
+      });
+    };
+    if (this.connection.isAsync) await this.transactional(updatePassword);
+    else await updatePassword();
+    return this.createAuthenticationSession(account, payload.organizationId ?? null);
+  }
+
+  executeBulkImport(input, actorId) {
+    if (input.dryRun !== false) return executeBulkImport(this, input, actorId);
+    this.bulkImportLocks ??= new Map();
+    const lockKey = `${input.organizationId}:${input.idempotencyKey}`;
+    const previous = this.bulkImportLocks.get(lockKey) ?? Promise.resolve();
+    const operation = previous.then(() => executeBulkImport(this, input, actorId));
+    const trackedOperation = operation.catch(() => {});
+    this.bulkImportLocks.set(lockKey, trackedOperation);
+    return operation.finally(() => {
+      if (this.bulkImportLocks.get(lockKey) === trackedOperation) this.bulkImportLocks.delete(lockKey);
+    });
   }
 
   async refreshAuthentication(refreshToken) {
@@ -1627,8 +1698,32 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       organizationId,
       organizationIds: account.organizationIds,
       permissions: this.getAccountPermissions(account.id, organizationId),
-      profile: person ? { givenName: person.givenName, familyName: person.familyName } : null
+      profile: person ? { givenName: person.givenName, familyName: person.familyName } : null,
+      locale: account.metadata?.locale ?? person?.preferredLocale ?? null,
+      organization: organizationId ? (() => {
+        const organization = this.organizations.get(organizationId);
+        return organization ? {
+          id: organization.id,
+          displayName: organization.displayName,
+          countryCode: organization.countryCode,
+          organizationType: organization.organizationType
+        } : null;
+      })() : null
     };
+  }
+
+  updateUserLocale(accountId, locale) {
+    if (!['fr', 'en', 'es', 'pt', 'ar'].includes(locale)) {
+      throw new ValidationError(`Unsupported language: ${locale}`);
+    }
+    const account = this.accounts.get(accountId);
+    if (!account) throw new ValidationError(`Unknown account: ${accountId}`);
+    return this.transactional(() => {
+      const before = cloneRecord(account);
+      account.metadata = { ...account.metadata, locale };
+      account.touch();
+      return this.recordUpdate('accounts', before, account, accountId, 'account.locale-update');
+    });
   }
 
   transitionInstitutionalStatus(resource, id, input, actorId = null) {
@@ -2280,8 +2375,16 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     const permissions = this.getAccountPermissions(accountId, organizationId);
     const roles = this.getRoleCodes(accountId, organizationId);
     const role = roles[0] ?? 'learner';
+    const organizationType = this.organizations.get(organizationId)?.organizationType ?? 'institution';
+    const experienceRole = role === 'tenant-admin'
+      ? ({ university: 'university-admin', 'training-center': 'training-center-admin', school: 'school-admin' }[organizationType] ?? 'school-admin')
+      : role;
     const cardsByRole = {
       admin: ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'financeCollected', 'dataQualityScore'],
+      'platform-admin': ['headcount', 'enrollments', 'financeCollected', 'dataQualityScore', 'lmsActivityCount'],
+      'school-admin': ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'financeCollected', 'dataQualityScore'],
+      'university-admin': ['headcount', 'enrollments', 'resultAverage', 'progressionAverage', 'financeCollected', 'dataQualityScore'],
+      'training-center-admin': ['headcount', 'enrollments', 'progressionAverage', 'lmsActivityCount', 'financeCollected'],
       'tenant-admin': ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'financeCollected', 'dataQualityScore'],
       direction: ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'dataQualityScore'],
       teacher: ['attendanceRate', 'resultAverage', 'progressionAverage'],
@@ -2289,6 +2392,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       learner: ['resultAverage', 'attendanceRate', 'progressionAverage'],
       apprenant: ['resultAverage', 'attendanceRate', 'progressionAverage'],
       parent: ['resultAverage', 'attendanceRate', 'progressionAverage'],
+      guardian: ['resultAverage', 'attendanceRate', 'progressionAverage'],
       student: ['resultAverage', 'progressionAverage', 'lmsActivityCount'],
       'university-student': ['resultAverage', 'progressionAverage', 'lmsActivityCount'],
       'etudiant-universitaire': ['resultAverage', 'progressionAverage', 'lmsActivityCount'],
@@ -2300,20 +2404,83 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     const analytics = permissions.includes('*') || permissions.includes('analytics.read')
       ? this.buildAnalytics({ organizationId })
       : { metrics: {} };
+    const modulePermissions = [
+      ['configuration', ['organizations.read', 'institution.read', 'academics.read', 'people.read', 'profiles.read']],
+      ['enrollment', ['academics.read']],
+      ['teaching', ['assignments.read', 'scheduling.read']],
+      ['attendance', ['attendance.read']],
+      ['grading', ['grading.read']],
+      ['lms', ['lms.read']],
+      ['finance', ['finance.read']],
+      ['documents', ['documents.read']],
+      ['analytics', ['analytics.read']],
+      ['support', ['support.read']],
+      ['governance', ['audit.read', 'operations.read', 'security.read']]
+    ];
+    const nextStepDefinitions = {
+      'platform-admin': [
+        ['operations.read', 'Review platform operations', '/operations'],
+        ['audit.read', 'Review governance events', '/audit']
+      ],
+      'school-admin': [
+        ['academics.write', 'Configure the academic year and classes', '/academics'],
+        ['academics.write', 'Import and enroll learners', '/imports'],
+        ['people.write', 'Assign teachers and guardians', '/profiles']
+      ],
+      'university-admin': [
+        ['academics.write', 'Configure programs, periods and courses', '/academics'],
+        ['academics.write', 'Import students', '/imports'],
+        ['institution.write', 'Maintain campuses and accreditations', '/institution']
+      ],
+      'training-center-admin': [
+        ['lms.write', 'Configure learning programs', '/lms'],
+        ['academics.write', 'Import trainees and trainers', '/imports'],
+        ['certificates.write', 'Prepare certificates', '/certificates']
+      ],
+      learner: [
+        ['assignments.read', 'Review assignments', '/assignments'],
+        ['lms.read', 'Continue learning', '/lms'],
+        ['documents.read', 'Open documents', '/documents']
+      ],
+      student: [
+        ['lms.read', 'Continue a course', '/lms'],
+        ['grading.read', 'Review results', '/grading'],
+        ['calendar.read', 'View the calendar', '/calendar']
+      ],
+      teacher: [
+        ['attendance.write', 'Record attendance', '/attendance'],
+        ['grading.write', 'Enter grades', '/grading'],
+        ['assignments.write', 'Prepare an assignment', '/assignments']
+      ],
+      trainer: [
+        ['lms.write', 'Update course content', '/lms'],
+        ['grading.write', 'Assess trainees', '/grading'],
+        ['attendance.write', 'Record attendance', '/attendance']
+      ],
+      parent: [
+        ['attendance.read', 'Review attendance', '/attendance'],
+        ['grading.read', 'Review results', '/grading'],
+        ['communications.read', 'Contact the institution', '/communications']
+      ],
+      guardian: [
+        ['attendance.read', 'Review attendance', '/attendance'],
+        ['communications.read', 'Contact the institution', '/communications']
+      ]
+    };
+    const allowed = (permission) => permissions.includes('*') || permissions.includes(permission);
     return {
       role,
+      experienceRole,
       roles,
-      cards: (cardsByRole[role] ?? cardsByRole.learner)
+      cards: (cardsByRole[experienceRole] ?? cardsByRole[role] ?? cardsByRole.learner)
         .filter((metric) => Object.hasOwn(analytics.metrics, metric))
         .map((metric) => ({ metric, value: analytics.metrics[metric] })),
-      availableModules: [
-        ['analytics', 'analytics.read'],
-        ['support', 'support.read'],
-        ['saas', 'saas.read'],
-        ['operations', 'operations.read'],
-        ['ai-assistance', 'ai-assistance.read']
-      ].filter(([, permission]) => permissions.includes('*') || permissions.includes(permission))
-        .map(([module]) => module)
+      availableModules: modulePermissions
+        .filter(([, required]) => required.some(allowed))
+        .map(([module]) => module),
+      nextSteps: (nextStepDefinitions[experienceRole] ?? nextStepDefinitions[role] ?? nextStepDefinitions.learner)
+        .filter(([permission]) => allowed(permission))
+        .map(([, label, path]) => ({ label, path }))
     };
   }
 

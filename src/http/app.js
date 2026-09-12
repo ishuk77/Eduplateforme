@@ -30,6 +30,7 @@ import { registerAuditRoutes } from './routes/audit.js';
 import { registerInstitutionalRoutes } from './routes/institutional.js';
 import { registerLearningSystemRoutes } from './routes/learning-systems.js';
 import { registerOperationsRoutes } from './routes/operations.js';
+import { registerImportRoutes } from './routes/imports.js';
 import { modules, resolveModule } from '../modules.js';
 import { renderAppShell } from '../template.js';
 import { ApiError } from '../shared/errors.js';
@@ -107,6 +108,7 @@ function createOpenApiDescription() {
       '/auth/login': { post: { summary: 'Authenticate with username and password' } },
       '/auth/refresh': { post: { summary: 'Refresh an access token' } },
       '/auth/logout': { delete: { summary: 'Revoke a refresh token' } },
+      '/auth/password/change-required': { post: { summary: 'Replace a temporary password before first access' } },
       '/auth/me': { get: { summary: 'Return the authenticated user' } },
       '/organizations': { get: { summary: 'List organizations' }, post: { summary: 'Create organization' } },
       '/people': { get: { summary: 'List people' }, post: { summary: 'Create person' } },
@@ -115,6 +117,8 @@ function createOpenApiDescription() {
       '/academics/programs': { get: { summary: 'List programs' }, post: { summary: 'Create program' } },
       '/academics/classes': { get: { summary: 'List classes' }, post: { summary: 'Create class' } },
       '/academics/enrollments': { get: { summary: 'List enrollments' }, post: { summary: 'Create enrollment' } },
+      '/imports/preview': { post: { summary: 'Validate a tenant-scoped CSV or XLSX import without writing' } },
+      '/imports/apply': { post: { summary: 'Apply a validated tenant-scoped import transactionally' } },
       '/documents': { get: { summary: 'List documents' }, post: { summary: 'Create document' } },
       '/document-templates': { get: { summary: 'List official document templates' }, post: { summary: 'Create a versioned document template' } },
       '/credentials': { get: { summary: 'List credentials' }, post: { summary: 'Create credential' } },
@@ -223,6 +227,7 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
   registerInstitutionalRoutes(router, context);
   registerLearningSystemRoutes(router, context);
   registerOperationsRoutes(router, context);
+  registerImportRoutes(router, context);
 
   return async function app(request) {
     let corsOrigin = null;
@@ -260,7 +265,7 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
       }
 
       enforceRateLimit(request, { namespace: 'api' });
-      if (['/auth/login', '/auth/register', '/auth/refresh', '/auth/mfa/challenge', '/auth/mfa/confirm'].includes(url.pathname)) {
+      if (['/auth/login', '/auth/register', '/auth/refresh', '/auth/mfa/challenge', '/auth/mfa/confirm', '/auth/password/change-required'].includes(url.pathname)) {
         enforceRateLimit(request, {
           namespace: 'authentication',
           limit: Number.parseInt(process.env.AUTH_RATE_LIMIT_MAX ?? '10', 10),

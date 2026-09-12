@@ -105,6 +105,27 @@ const STANDARD_REFERENCES = Object.freeze([
   { catalog: 'countries', code: 'FR', labels: { fr: 'France', en: 'France' } },
   { catalog: 'countries', code: 'SN', labels: { fr: 'Sénégal', en: 'Senegal' } },
   { catalog: 'countries', code: 'CD', labels: { fr: 'République démocratique du Congo', en: 'Democratic Republic of the Congo' } },
+  { catalog: 'countries', code: 'BE', labels: { fr: 'Belgique', en: 'Belgium' } },
+  { catalog: 'countries', code: 'BR', labels: { fr: 'Brésil', en: 'Brazil' } },
+  { catalog: 'countries', code: 'CA', labels: { fr: 'Canada', en: 'Canada' } },
+  { catalog: 'countries', code: 'CI', labels: { fr: 'Côte d’Ivoire', en: 'Côte d’Ivoire' } },
+  { catalog: 'countries', code: 'CM', labels: { fr: 'Cameroun', en: 'Cameroon' } },
+  { catalog: 'countries', code: 'DZ', labels: { fr: 'Algérie', en: 'Algeria' } },
+  { catalog: 'countries', code: 'ES', labels: { fr: 'Espagne', en: 'Spain' } },
+  { catalog: 'countries', code: 'GB', labels: { fr: 'Royaume-Uni', en: 'United Kingdom' } },
+  { catalog: 'countries', code: 'GH', labels: { fr: 'Ghana', en: 'Ghana' } },
+  { catalog: 'countries', code: 'GN', labels: { fr: 'Guinée', en: 'Guinea' } },
+  { catalog: 'countries', code: 'HT', labels: { fr: 'Haïti', en: 'Haiti' } },
+  { catalog: 'countries', code: 'KE', labels: { fr: 'Kenya', en: 'Kenya' } },
+  { catalog: 'countries', code: 'MA', labels: { fr: 'Maroc', en: 'Morocco' } },
+  { catalog: 'countries', code: 'ML', labels: { fr: 'Mali', en: 'Mali' } },
+  { catalog: 'countries', code: 'MX', labels: { fr: 'Mexique', en: 'Mexico' } },
+  { catalog: 'countries', code: 'NG', labels: { fr: 'Nigéria', en: 'Nigeria' } },
+  { catalog: 'countries', code: 'PT', labels: { fr: 'Portugal', en: 'Portugal' } },
+  { catalog: 'countries', code: 'RW', labels: { fr: 'Rwanda', en: 'Rwanda' } },
+  { catalog: 'countries', code: 'TN', labels: { fr: 'Tunisie', en: 'Tunisia' } },
+  { catalog: 'countries', code: 'UG', labels: { fr: 'Ouganda', en: 'Uganda' } },
+  { catalog: 'countries', code: 'US', labels: { fr: 'États-Unis', en: 'United States' } },
   { catalog: 'currencies', code: 'EUR', labels: { fr: 'Euro', en: 'Euro' } },
   { catalog: 'currencies', code: 'USD', labels: { fr: 'Dollar américain', en: 'US dollar' } },
   { catalog: 'currencies', code: 'XOF', labels: { fr: 'Franc CFA BCEAO', en: 'West African CFA franc' } },
@@ -112,6 +133,9 @@ const STANDARD_REFERENCES = Object.freeze([
   { catalog: 'timezones', code: 'Africa/Dakar', labels: { fr: 'Dakar', en: 'Dakar' } },
   { catalog: 'languages', code: 'fr', labels: { fr: 'Français', en: 'French' } },
   { catalog: 'languages', code: 'en', labels: { fr: 'Anglais', en: 'English' } },
+  { catalog: 'languages', code: 'es', labels: { fr: 'Espagnol', en: 'Spanish' } },
+  { catalog: 'languages', code: 'pt', labels: { fr: 'Portugais', en: 'Portuguese' } },
+  { catalog: 'languages', code: 'ar', labels: { fr: 'Arabe', en: 'Arabic' } },
   { catalog: 'isced', code: 'ISCED-1', labels: { fr: 'Enseignement primaire', en: 'Primary education' } },
   { catalog: 'isced', code: 'ISCED-2', labels: { fr: 'Premier cycle du secondaire', en: 'Lower secondary education' } },
   { catalog: 'administrative-levels', code: 'ADM1', labels: { fr: 'Premier niveau administratif', en: 'First administrative level' } },
@@ -175,6 +199,7 @@ export class EducationPlatformService extends FoundationService {
     this.courses = new Map();
     this.learnerLifecycleEvents = new Map();
     this.contextualPermissionRules = new Map();
+    this.importBatches = new Map();
     this.documentTemplates = new Map();
     this.documentShares = new Map();
     this.consents = new Map();
