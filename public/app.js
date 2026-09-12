@@ -9,6 +9,10 @@ const state = {
   offlineQueue: JSON.parse(window.localStorage.getItem('eduplateforme.offlineQueue') ?? '[]')
 };
 
+const SUPPORTED_LOCALES = ['fr', 'en', 'es', 'pt', 'ar'];
+const COUNTRY_CODES = ['BE', 'BR', 'CA', 'CD', 'CI', 'CM', 'DZ', 'ES', 'FR', 'GB', 'GH', 'GN', 'HT', 'KE', 'MA', 'ML', 'MX', 'NG', 'PT', 'RW', 'SN', 'TN', 'UG', 'US'];
+if (!SUPPORTED_LOCALES.includes(state.locale)) state.locale = 'fr';
+
 const translations = {
   en: {
     dashboard: ['Dashboard', 'Overview'],
@@ -33,6 +37,21 @@ const translations = {
     empty: 'Aucune donnée',
     emptyHint: 'Utilisez le formulaire ci-dessus pour créer le premier élément autorisé par l’API.',
     noResults: 'Aucun résultat enregistré pour le moment.'
+  },
+  es: {
+    logout: 'Cerrar sesión', activeOrganization: 'Organización activa', loading: 'Cargando datos…',
+    add: 'Añadir', empty: 'Sin datos', emptyHint: 'Cree primero los requisitos indicados.',
+    noResults: 'Todavía no hay resultados.'
+  },
+  pt: {
+    logout: 'Sair', activeOrganization: 'Organização ativa', loading: 'A carregar dados…',
+    add: 'Adicionar', empty: 'Sem dados', emptyHint: 'Crie primeiro os pré-requisitos indicados.',
+    noResults: 'Ainda não há resultados.'
+  },
+  ar: {
+    logout: 'تسجيل الخروج', activeOrganization: 'المؤسسة النشطة', loading: 'جارٍ تحميل البيانات…',
+    add: 'إضافة', empty: 'لا توجد بيانات', emptyHint: 'أنشئ المتطلبات الأساسية أولاً.',
+    noResults: 'لا توجد نتائج حتى الآن.'
   }
 };
 
@@ -44,6 +63,40 @@ function moduleLabel(module, part = 0) {
   return translations[state.locale]?.[module.id]?.[part]
     ?? (part === 0 ? module.label : module.eyebrow);
 }
+
+function applyLocale() {
+  document.documentElement.lang = state.locale;
+  document.documentElement.dir = state.locale === 'ar' ? 'rtl' : 'ltr';
+}
+
+function countryFlag(countryCode) {
+  const code = String(countryCode ?? '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return '🏳️';
+  return String.fromCodePoint(...[...code].map((character) => 127397 + character.charCodeAt(0)));
+}
+
+function countryName(countryCode) {
+  const code = String(countryCode ?? '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return code || '—';
+  try {
+    return new Intl.DisplayNames([state.locale, 'fr'], { type: 'region' }).of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+function countryIndicator(countryCode) {
+  const code = String(countryCode ?? '').toUpperCase();
+  return `${countryFlag(code)} ${countryName(code)} (${code || '—'})`;
+}
+
+function countryOptions(selected = '') {
+  return COUNTRY_CODES.map((code) =>
+    `<option value="${code}" ${code === String(selected).toUpperCase() ? 'selected' : ''}>${escapeHtml(countryIndicator(code))}</option>`
+  ).join('');
+}
+
+applyLocale();
 
 const modules = [
   {
@@ -68,7 +121,7 @@ const modules = [
         ['administrativeAuthority', 'Autorité administrative', 'text', false],
         ['operationalStatus', 'Statut opérationnel', 'text', false]
       ],
-      columns: ['displayName', 'internalReference', 'nationalInstitutionId', 'registrationNumber', 'operationalStatus', 'status']
+      columns: ['displayName', 'countryCode', 'internalReference', 'nationalInstitutionId', 'registrationNumber', 'operationalStatus', 'status']
     }]
   },
   {
@@ -496,14 +549,14 @@ const modules = [
     resources: [
       { id: 'lmsCatalogs', title: 'Catalogues', path: '/lms/catalogs', read: 'lms.read', write: 'lms.write', fields: [['code', 'Code', 'text', true], ['name', 'Nom', 'text', true], ['description', 'Description', 'textarea', false]], columns: ['code', 'name', 'status'] },
       { id: 'lmsPrograms', title: 'Programmes LMS', path: '/lms/programs', read: 'lms.read', write: 'lms.write', fields: [['catalogId', 'Catalogue', 'reference', true, '/lms/catalogs', 'name'], ['academicProgramId', 'Programme académique', 'reference', true, '/academics/programs', 'name'], ['code', 'Code', 'text', true], ['title', 'Titre', 'text', true]], columns: ['code', 'title', 'catalogId', 'academicProgramId'] },
-      { id: 'lmsCourses', title: 'Cours LMS', path: '/lms/courses', read: 'lms.read', write: 'lms.write', fields: [['programId', 'Programme LMS', 'reference', true, '/lms/programs', 'title'], ['academicCourseId', 'Cours académique', 'reference', true, '/academics/courses', 'name'], ['code', 'Code', 'text', true], ['title', 'Titre', 'text', true]], columns: ['code', 'title', 'programId'] },
-      { id: 'lmsModules', title: 'Modules', path: '/lms/modules', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', true]], columns: ['position', 'title', 'courseId'] },
-      { id: 'lmsLessons', title: 'Leçons', path: '/lms/lessons', read: 'lms.read', write: 'lms.write', fields: [['moduleId', 'Module', 'reference', true, '/lms/modules', 'title'], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', true]], columns: ['position', 'title', 'moduleId'] },
+      { id: 'lmsCourses', title: 'Cours LMS', path: '/lms/courses', read: 'lms.read', write: 'lms.write', fields: [['programId', 'Programme LMS', 'reference', true, '/lms/programs', 'title'], ['academicCourseId', 'Cours académique', 'reference', true, '/academics/courses', 'name'], ['code', 'Code', 'text', true], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', false]], columns: ['code', 'title', 'position', 'programId'] },
+      { id: 'lmsModules', title: 'Chapitres', path: '/lms/modules', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', true], ['required', 'Obligatoire', 'checkbox', false]], columns: ['position', 'title', 'courseId', 'required'] },
+      { id: 'lmsLessons', title: 'Leçons', path: '/lms/lessons', read: 'lms.read', write: 'lms.write', fields: [['moduleId', 'Chapitre', 'reference', true, '/lms/modules', 'title'], ['title', 'Titre', 'text', true], ['position', 'Position', 'number', true], ['prerequisiteLessonId', 'Prérequis explicite', 'reference', false, '/lms/lessons', 'title'], ['required', 'Obligatoire', 'checkbox', false]], columns: ['position', 'title', 'moduleId', 'required'] },
       { id: 'lmsResources', title: 'Ressources externes', path: '/lms/resources', read: 'lms.read', write: 'lms.write', fields: [['lessonId', 'Leçon', 'reference', true, '/lms/lessons', 'title'], ['title', 'Titre', 'text', true], ['externalReference', 'Référence externe', 'text', true], ['mediaType', 'Type MIME', 'text', false]], columns: ['title', 'externalReference', 'mediaType'] },
       { id: 'lmsParticipants', title: 'Participants', path: '/lms/participants', read: 'lms.read', write: 'lms.write', fields: [['personId', 'Personne', 'reference', true, '/people', 'familyName'], ['role', 'Rôle', 'select', true, ['learner', 'teacher', 'facilitator', 'observer']]], columns: ['personId', 'role', 'status'] },
       { id: 'lmsEnrollments', title: 'Inscriptions LMS', path: '/lms/enrollments', read: 'lms.read', write: 'lms.write', fields: [['participantId', 'Participant', 'reference', true, '/lms/participants', 'personId'], ['programId', 'Programme LMS', 'reference', true, '/lms/programs', 'title']], columns: ['participantId', 'programId', 'enrollmentStatus'] },
       { id: 'lmsProgress', title: 'Progression', path: '/lms/progress', read: 'lms.read', write: 'lms.write', fields: [['enrollmentId', 'Inscription LMS', 'reference', true, '/lms/enrollments', 'id'], ['lessonId', 'Leçon', 'reference', true, '/lms/lessons', 'title'], ['percent', 'Progression (%)', 'number', true]], columns: ['enrollmentId', 'lessonId', 'percent', 'completedAt'] },
-      { id: 'lmsQuizzes', title: 'Quiz', path: '/lms/quizzes', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['title', 'Titre', 'text', true], ['passingScore', 'Seuil (%)', 'number', true]], columns: ['title', 'courseId', 'passingScore'], action: { label: 'Soumettre une tentative', path: '/lms/quizzes/:id/attempts', fields: [['enrollmentId', 'Inscription LMS', 'reference', true, '/lms/enrollments', 'id'], ['answers', 'Réponses par question (JSON)', 'json', true]] } },
+      { id: 'lmsQuizzes', title: 'Quiz et examen final', path: '/lms/quizzes', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['lessonId', 'Leçon (vide pour examen final)', 'reference', false, '/lms/lessons', 'title'], ['title', 'Titre', 'text', true], ['examType', 'Type', 'select', true, ['practice', 'lesson', 'final']], ['passingScore', 'Seuil (%)', 'number', true], ['maxAttempts', 'Tentatives maximum', 'number', true], ['attemptState', 'État des tentatives', 'select', true, ['open', 'closed']], ['required', 'Obligatoire', 'checkbox', false]], columns: ['title', 'courseId', 'lessonId', 'examType', 'passingScore', 'maxAttempts', 'attemptState'], action: { label: 'Soumettre une tentative', path: '/lms/quizzes/:id/attempts', fields: [['enrollmentId', 'Inscription LMS', 'reference', true, '/lms/enrollments', 'id'], ['answers', 'Réponses par question (JSON)', 'json', true]] } },
       { id: 'lmsQuestions', title: 'Questions', path: '/lms/questions', read: 'lms.read', write: 'lms.write', fields: [['quizId', 'Quiz', 'reference', true, '/lms/quizzes', 'title'], ['prompt', 'Question', 'textarea', true], ['questionType', 'Type', 'select', true, ['single', 'multiple', 'text']], ['options', 'Choix (JSON)', 'json', false], ['correctAnswer', 'Réponse attendue (JSON ou texte JSON)', 'json', true]], columns: ['quizId', 'prompt', 'questionType'] },
       { id: 'lmsAttempts', title: 'Tentatives', path: '/lms/attempts', read: 'lms.read', write: 'lms.write', create: false, createOnly: true, fields: [], columns: ['quizId', 'enrollmentId', 'score', 'passed', 'submittedAt'] },
       { id: 'lmsAssessments', title: 'Examens et évaluations', path: '/lms/assessments', read: 'lms.read', write: 'lms.write', fields: [['courseId', 'Cours LMS', 'reference', true, '/lms/courses', 'title'], ['title', 'Titre', 'text', true], ['assessmentType', 'Type', 'select', true, ['exam', 'evaluation', 'project']], ['gradingSystemId', 'Barème', 'reference', false, '/grading/systems', 'name']], columns: ['title', 'assessmentType', 'courseId'] },
@@ -740,6 +793,61 @@ async function apiRequest(path, options = {}, retry = true) {
   return payload;
 }
 
+async function apiUpload(path, formData) {
+  if (!navigator.onLine) throw new Error('Une connexion est requise pour téléverser un document officiel.');
+  const response = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: state.token ? { authorization: ['Bearer', state.token].join(' ') } : {},
+    body: formData
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(payload?.error?.message ?? `Téléversement impossible (${response.status}).`);
+  return payload;
+}
+
+async function downloadAuthenticated(path, fileName) {
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    headers: { authorization: ['Bearer', state.token].join(' ') }
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error?.message ?? `Téléchargement impossible (${response.status}).`);
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function openAuthenticatedHtml(path, targetWindow) {
+  if (!targetWindow) throw new Error('Autorisez les fenêtres contextuelles pour ouvrir le titre.');
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    headers: { authorization: ['Bearer', state.token].join(' ') }
+  });
+  if (!response.ok) throw new Error(`Vue imprimable impossible (${response.status}).`);
+  const url = URL.createObjectURL(await response.blob());
+  targetWindow.location.assign(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+async function loadSecureImages() {
+  await Promise.all([...document.querySelectorAll('[data-secure-image]')].map(async (image) => {
+    const response = await fetch(image.dataset.secureImage, {
+      credentials: 'same-origin',
+      headers: { authorization: ['Bearer', state.token].join(' ') }
+    });
+    if (!response.ok) return;
+    const url = URL.createObjectURL(await response.blob());
+    image.src = url;
+    image.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
+  }));
+}
+
 function persistOfflineQueue() {
   window.localStorage.setItem('eduplateforme.offlineQueue', JSON.stringify(state.offlineQueue));
 }
@@ -877,8 +985,9 @@ function onboarding() {
           <label>Nom légal<input name="legalName" required minlength="2"></label>
           <label>Nom affiché<input name="displayName" required minlength="2"></label>
           <label>Référence interne<input name="internalReference" required minlength="2" placeholder="ECOLE-001"></label>
-          <label>Code pays<input name="countryCode" required minlength="2" maxlength="2" value="FR"></label>
-          <label>Type<select name="organizationType"><option value="institution">Établissement</option><option value="school">École</option><option value="campus">Campus</option></select></label>
+          <label>Pays<select name="countryCode" required>${countryOptions('FR')}</select></label>
+          <label>Langue de l’espace<select name="locale">${SUPPORTED_LOCALES.map((locale) => `<option value="${locale}" ${state.locale === locale ? 'selected' : ''}>${locale.toUpperCase()}</option>`).join('')}</select></label>
+          <label>Type<select name="organizationType"><option value="institution">Établissement</option><option value="school">École</option><option value="university">Université</option><option value="training-center">Centre de formation</option><option value="campus">Campus</option></select></label>
           <label>Identifiant national<input name="nationalInstitutionId"></label>
           <label>Immatriculation<input name="registrationNumber"></label>
           <label>Identifiant fiscal<input name="taxIdentifier"></label>
@@ -895,14 +1004,32 @@ function onboarding() {
 
 function shell(content, activeId = 'dashboard') {
   const profile = state.user?.profile;
+  const navigationGroups = [
+    { label: 'Configuration', ids: ['organizations', 'institution', 'i18n', 'references', 'academics', 'people', 'profiles'] },
+    { label: 'Opérations quotidiennes', ids: ['scheduling', 'assignments', 'attendance', 'grading', 'lms', 'virtualSchools', 'finance', 'communications', 'notifications', 'documents', 'reports', 'certificates', 'calendar', 'discipline', 'parentalConsents'] },
+    { label: 'Gouvernance & exploitation', ids: ['analytics', 'dataQuality', 'emis', 'meetings', 'saas', 'operations', 'ai', 'audit', 'support'] }
+  ];
+  const moduleById = new Map(modules.map((module) => [module.id, module]));
+  const navigation = navigationGroups.map((group) => {
+    const links = group.ids.map((id) => moduleById.get(id))
+      .filter((module) => module?.resources.some((resource) => can(resource.read)));
+    if (links.length === 0) return '';
+    return `<section class="nav-group"><h2>${group.label}</h2>${links.map((module) => `<a class="nav-link ${activeId === module.id ? 'is-active' : ''}" href="${module.path}"><span>${moduleLabel(module)}</span><small>${moduleLabel(module, 1)}</small></a>`).join('')}</section>`;
+  }).join('');
+  const organization = state.user?.organization;
   return `
     <div class="app-shell">
       <aside class="shell-nav" id="shell-nav" data-open="false" aria-label="Navigation principale">
-        <a class="brand-mark" href="/dashboard">Eduplateforme</a>
+        <a class="brand-mark" href="/dashboard">${organization ? `<img class="tenant-logo" src="/public/organizations/${encodeURIComponent(organization.id)}/logo" alt="Logo de ${escapeHtml(organization.displayName)}">` : ''}<span>Eduplateforme</span></a>
         <p class="tenant-name">${escapeHtml(profile ? `${profile.givenName} ${profile.familyName}` : state.user?.username)}</p>
         <nav class="nav-links">
           <a class="nav-link ${activeId === 'dashboard' ? 'is-active' : ''}" href="/dashboard"><span>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' })}</span><small>${moduleLabel({ id: 'dashboard', label: 'Tableau de bord', eyebrow: 'Vue d’ensemble' }, 1)}</small></a>
-          ${modules.filter((module) => module.resources.some((resource) => can(resource.read))).map((module) => `<a class="nav-link ${activeId === module.id ? 'is-active' : ''}" href="${module.path}"><span>${moduleLabel(module)}</span><small>${moduleLabel(module, 1)}</small></a>`).join('')}
+          ${navigation}
+          <a class="nav-link ${activeId === 'myProfile' ? 'is-active' : ''}" href="/profile"><span>Mon profil</span><small>Préférences et confidentialité</small></a>
+          ${can('organizations.write') || can('credentials.write') || can('documents.write') ? `<a class="nav-link ${activeId === 'identityAssets' ? 'is-active' : ''}" href="/identity-assets"><span>Identité & preuves</span><small>Logo, signatures, justificatifs</small></a>` : ''}
+          ${can('lms.read') ? `<a class="nav-link ${activeId === 'learningPath' ? 'is-active' : ''}" href="/learning-path"><span>Mon parcours</span><small>Leçons, verrous et titres</small></a>` : ''}
+          ${can('academics.write') && can('people.write') && can('accounts.write') ? `<a class="nav-link ${activeId === 'imports' ? 'is-active' : ''}" href="/imports"><span>Imports CSV/XLSX</span><small>Inscriptions et équipes</small></a>` : ''}
+          <a class="nav-link ${activeId === 'help' ? 'is-active' : ''}" href="/help"><span>Guide des modules</span><small>Aide contextuelle</small></a>
         </nav>
         <button id="logout" class="logout-button" type="button">${t('logout')}</button>
       </aside>
@@ -910,9 +1037,9 @@ function shell(content, activeId = 'dashboard') {
       <div class="shell-main">
         <header class="topbar">
           <button class="menu-toggle" id="menu-toggle" type="button" aria-controls="shell-nav" aria-expanded="false">Menu</button>
-          <label><span class="sr-only">Language</span><select id="locale-switch" aria-label="Language"><option value="fr" ${state.locale === 'fr' ? 'selected' : ''}>FR</option><option value="en" ${state.locale === 'en' ? 'selected' : ''}>EN</option></select></label>
+          <label><span class="sr-only">Language</span><select id="locale-switch" aria-label="Language">${SUPPORTED_LOCALES.map((locale) => `<option value="${locale}" ${state.locale === locale ? 'selected' : ''}>${locale.toUpperCase()}</option>`).join('')}</select></label>
           <span id="sync-status" class="sync-status" role="status">${navigator.onLine ? 'En ligne' : 'Hors ligne'} · ${state.offlineQueue.length} en attente</span>
-          <span class="organization-chip">${escapeHtml(state.user?.organizationId ? t('activeOrganization') : 'Configuration requise')}</span>
+          <span class="organization-chip">${organization ? `${escapeHtml(countryFlag(organization.countryCode))} ${escapeHtml(organization.displayName || t('activeOrganization'))} · ${escapeHtml(organization.countryCode)}` : 'Configuration requise'}</span>
         </header>
         <div id="feedback" class="feedback global-feedback" role="alert" tabindex="-1" hidden></div>
         ${content}
@@ -923,9 +1050,27 @@ function shell(content, activeId = 'dashboard') {
 function fieldInput(field, record = {}) {
   const [name, label, type, required, source, optionLabel] = field;
   const value = record[name] ?? '';
+  if (name === 'countryCode') {
+    return `<label>${label}<select name="${name}" ${required ? 'required' : ''}><option value="">Sélectionner…</option>${countryOptions(value)}</select></label>`;
+  }
+  if (name === 'preferredLocale' || name === 'language') {
+    return `<label>${label}<select name="${name}" ${required ? 'required' : ''}><option value="">Sélectionner…</option>${SUPPORTED_LOCALES.map((locale) => `<option value="${locale}" ${locale === value ? 'selected' : ''}>${locale.toUpperCase()}</option>`).join('')}</select></label>`;
+  }
   if (type === 'reference') {
-    const items = state.references.get(source)?.items ?? [];
-    return `<label>${label}<select name="${name}" ${required ? 'required' : ''}><option value="">Sélectionner…</option>${items.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === value ? 'selected' : ''}>${escapeHtml(item[optionLabel] || item.id)}</option>`).join('')}</select></label>`;
+    const reference = state.references.get(source);
+    const items = reference?.items ?? [];
+    const prerequisitePath = source.startsWith('/academics/') ? '/academics'
+      : source.startsWith('/profiles/') ? '/profiles'
+        : source.startsWith('/institution/') ? '/institution'
+          : source.startsWith('/finance/') ? '/finance'
+            : source.startsWith('/lms/') ? '/lms'
+              : source;
+    const status = reference?.error
+      ? `Erreur de chargement. <a href="${prerequisitePath}">Réessayer dans le module source</a>.`
+      : items.length === 0
+        ? `Aucune option autorisée. <a href="${prerequisitePath}">Créer le prérequis</a>.`
+        : `${items.length} option(s) disponible(s).`;
+    return `<label>${label}<select name="${name}" ${required ? 'required' : ''} ${items.length === 0 ? 'disabled' : ''}><option value="">${reference?.error ? 'Erreur de chargement' : items.length === 0 ? 'Aucune option disponible' : 'Sélectionner…'}</option>${items.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === value ? 'selected' : ''}>${escapeHtml(item[optionLabel] || item.id || 'Sans libellé')}</option>`).join('')}</select><small class="field-status" role="status">${status}</small></label>`;
   }
   if (type === 'select') {
     return `<label>${label}<select name="${name}" ${required ? 'required' : ''}><option value="">Sélectionner…</option>${source.map((option) => `<option value="${option}" ${option === value ? 'selected' : ''}>${option}</option>`).join('')}</select></label>`;
@@ -949,17 +1094,17 @@ function resourceSection(resource) {
   const payload = state.resources.get(resource.id) ?? { items: [], page: { total: 0 } };
   const rows = payload.items.map((record) => `
     <article class="data-card" data-id="${escapeHtml(record.id)}">
-      <dl>${resource.columns.map((column) => `<div><dt>${escapeHtml(column)}</dt><dd>${formatValue(record[column])}</dd></div>`).join('')}</dl>
+      <dl>${resource.columns.map((column) => `<div><dt>${escapeHtml(column)}</dt><dd>${column === 'countryCode' ? escapeHtml(countryIndicator(record[column])) : formatValue(record[column])}</dd></div>`).join('')}</dl>
       ${can(resource.write) && resource.action && (!resource.action.show || resource.action.show(record)) ? `
         <form class="inline-action-form" data-record-action="${resource.id}" data-id="${escapeHtml(record.id)}">
           ${resource.action.fields.map((field) => fieldInput(field)).join('')}
           <button class="secondary-button" type="submit">${typeof resource.action.label === 'function' ? resource.action.label(record) : resource.action.label}</button>
         </form>` : ''}
-      ${resource.history !== false ? `<div class="row-actions"><button type="button" data-action="history" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Historique</button>${can(resource.write) && !resource.createOnly ? `<button type="button" data-action="edit" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Modifier</button><button class="danger-link" type="button" data-action="archive" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Archiver</button>` : ''}</div><div class="record-history" aria-live="polite"></div>` : ''}
+      ${resource.history !== false ? `<div class="row-actions"><button type="button" data-action="history" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Historique</button>${can(resource.write) && !resource.createOnly ? `<button type="button" data-action="edit" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Modifier</button><button class="danger-link" type="button" data-action="archive" data-resource="${resource.id}" data-id="${escapeHtml(record.id)}">Archiver</button>` : ''}${resource.id === 'classes' && can('academics.write') && can('people.write') && can('accounts.write') ? `<a class="secondary-button" href="/imports?kind=class-roster&classId=${encodeURIComponent(record.id)}">Importer la liste</a>` : ''}</div><div class="record-history" aria-live="polite"></div>` : ''}
     </article>`).join('');
   return `
     <section class="surface-card resource-section" id="resource-${resource.id}">
-      <div class="section-header"><div><p class="section-label">${payload.page.total} élément(s)</p><h2>${resource.title}</h2></div></div>
+      <div class="section-header"><div><p class="section-label">${payload.page.total} élément(s)</p><h2>${resource.title}</h2></div><a class="help-link" href="/help#${resource.id}">Aide</a></div>
       ${resource.summary ? `<p class="resource-summary" role="status">${escapeHtml(resource.summary(payload.items))}</p>` : ''}
       ${can(resource.write) && resource.create !== false ? `
         <details class="editor-panel">
@@ -982,7 +1127,12 @@ async function loadReferences(module) {
   ))];
   await Promise.all(paths.map(async (path) => {
     if (state.references.has(path)) return;
-    state.references.set(path, await apiRequest(`${path}?limit=200`));
+    state.references.set(path, { items: [], loading: true });
+    try {
+      state.references.set(path, await apiRequest(`${path}?limit=200`));
+    } catch (error) {
+      state.references.set(path, { items: [], page: { total: 0 }, error: error.message });
+    }
   }));
 }
 
@@ -1029,7 +1179,7 @@ async function modulePage(module) {
           <details><summary>Escalade</summary><p>L1 traite l’usage, L2 la configuration, L3 l’application et L4 les fournisseurs.</p></details>
         </section>`;
     }
-    app.innerHTML = shell(`<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">${moduleLabel(module, 1)}</p><h1>${moduleLabel(module)}</h1><p>${module.description}</p></section>${supplement}${module.resources.map(resourceSection).join('')}</main>`, module.id);
+    app.innerHTML = shell(`<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">${moduleLabel(module, 1)}</p><h1>${moduleLabel(module)}</h1><p>${module.description}</p><a class="help-link" href="/help#${module.id}">Ouvrir le guide de ce module</a></section>${supplement}${module.resources.map(resourceSection).join('')}</main>`, module.id);
     bindShell();
     bindResources(module);
     document.querySelectorAll('[data-analytics-export]').forEach((button) => {
@@ -1062,10 +1212,367 @@ async function dashboard() {
     };
     app.innerHTML = shell(`
       <main class="content-stack" id="main-content">
-        <section class="page-heading"><p class="section-label">Pilotage · ${escapeHtml(roleDashboard.role)}</p><h1>Tableau de bord</h1><p>Chaque carte dépend du rôle, des permissions et des données réellement disponibles.</p></section>
+        <section class="page-heading"><p class="section-label">Pilotage · ${escapeHtml(roleDashboard.experienceRole ?? roleDashboard.role)}</p><h1>Tableau de bord</h1><p>Chaque carte dépend du rôle, des permissions et des données réellement disponibles.</p></section>
         <section class="metric-grid">${roleDashboard.cards.map(({ metric, value }) => `<article class="metric-card surface-card"><span>${labels[metric] ?? metric}</span><strong>${value ?? '—'}</strong><small>${value == null ? 'Non disponible ou masqué' : 'Donnée tenant calculée'}</small></article>`).join('') || '<p class="empty-state">Aucun indicateur autorisé.</p>'}</section>
-        <section class="surface-card quick-start"><h2>Modules autorisés</h2><p>${roleDashboard.availableModules.map(escapeHtml).join(' · ') || 'Aucun module opérationnel supplémentaire.'}</p></section>
+        <section class="surface-card quick-start"><h2>Prochaines actions</h2><div class="action-grid">${roleDashboard.nextSteps.map((step) => `<a class="secondary-button" href="${escapeHtml(step.path)}">${escapeHtml(step.label)}</a>`).join('') || '<p>Aucune action supplémentaire autorisée.</p>'}</div></section>
+        <section class="surface-card quick-start"><h2>Espaces autorisés</h2><p>${roleDashboard.availableModules.map(escapeHtml).join(' · ') || 'Aucun module opérationnel supplémentaire.'}</p></section>
       </main>`);
+    bindShell();
+  } catch (error) {
+    notification(error.message, 'error');
+  }
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function downloadText(filename, text, contentType = 'text/csv;charset=utf-8') {
+  const url = URL.createObjectURL(new Blob([text], { type: contentType }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadImportTemplate(kind) {
+  const response = await fetch(`/imports/templates/${encodeURIComponent(kind)}`, {
+    headers: { authorization: `Bearer ${state.token}` }
+  });
+  if (!response.ok) throw new Error('Impossible de télécharger le modèle.');
+  downloadText(`${kind}-import-template.csv`, await response.text());
+}
+
+function renderImportResult(result) {
+  return `
+    <div class="resource-summary" role="status">${result.dryRun ? 'Aperçu sans écriture' : 'Import appliqué'} · ${result.summary.valid}/${result.summary.total} ligne(s) valide(s) · ${result.summary.invalid} erreur(s)</div>
+    ${result.errors.length ? `<ul class="error-list">${result.errors.map((error) => `<li><strong>Ligne ${error.rowNumber}</strong> — ${escapeHtml(error.message)}</li>`).join('')}</ul>` : ''}
+    <div class="table-scroll"><table><thead><tr><th>Ligne</th><th>État</th><th>Données</th></tr></thead><tbody>${result.rows.map((row) => `<tr><td>${row.rowNumber}</td><td>${row.errors?.length ? 'À corriger' : 'Valide'}</td><td><code>${escapeHtml(JSON.stringify(row.values ?? row.created ?? row))}</code></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+async function importsPage() {
+  app.innerHTML = shell('<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">Opérations quotidiennes</p><h1>Imports CSV/XLSX</h1><p>Chargement des classes autorisées…</p></section></main>', 'imports');
+  bindShell();
+  const selected = new URLSearchParams(window.location.search);
+  const initialKind = ['learners', 'staff', 'class-roster'].includes(selected.get('kind')) ? selected.get('kind') : 'learners';
+  let classes = { items: [] };
+  try {
+    classes = await apiRequest('/academics/classes?limit=200');
+  } catch (error) {
+    notification(error.message, 'error');
+  }
+  app.innerHTML = shell(`
+    <main class="content-stack" id="main-content">
+      <section class="page-heading"><p class="section-label">Opérations quotidiennes</p><h1>Imports CSV/XLSX</h1><p>Les imports officiels nécessitent une connexion, un aperçu sans écriture et une confirmation explicite.</p><a class="help-link" href="/help#bulk-import">Lire le guide et les schémas</a></section>
+      <section class="surface-card resource-section">
+        <h2>1. Préparer et prévisualiser</h2>
+        <form id="import-form" class="form-grid">
+          <label>Type d’import<select name="kind"><option value="learners" ${initialKind === 'learners' ? 'selected' : ''}>Apprenants / étudiants</option><option value="class-roster" ${initialKind === 'class-roster' ? 'selected' : ''}>Liste d’une classe</option><option value="staff" ${initialKind === 'staff' ? 'selected' : ''}>Enseignants / formateurs</option></select></label>
+          <label>Classe cible<select name="classId"><option value="">Selon classCode du fichier</option>${classes.items.map((item) => `<option value="${escapeHtml(item.id)}" ${selected.get('classId') === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.code || item.id)}</option>`).join('')}</select><small class="field-status">${classes.items.length ? `${classes.items.length} classe(s) autorisée(s).` : 'Aucune classe disponible. Créez année, programme et classe avant un import d’apprenants.'}</small></label>
+          <label class="form-wide">Fichier CSV ou XLSX (5 Mio, 1 000 lignes maximum)<input name="file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
+          <div class="form-actions form-wide"><button class="secondary-button" id="template-download" type="button">Télécharger le modèle CSV</button><button class="primary-button" type="submit">Prévisualiser sans écrire</button></div>
+        </form>
+      </section>
+      <section class="surface-card resource-section" id="import-result" aria-live="polite"><h2>2. Résultat de validation</h2><p>Aucun fichier prévisualisé.</p></section>
+    </main>`, 'imports');
+  bindShell();
+
+  const form = document.querySelector('#import-form');
+  const resultRegion = document.querySelector('#import-result');
+  let pendingPayload = null;
+  document.querySelector('#template-download').addEventListener('click', async () => {
+    try {
+      await downloadImportTemplate(new FormData(form).get('kind'));
+    } catch (error) {
+      notification(error.message, 'error');
+    }
+  });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!navigator.onLine) {
+      notification('Une connexion est requise pour prévisualiser et appliquer un import officiel.', 'error');
+      return;
+    }
+    const data = new FormData(form);
+    const file = data.get('file');
+    if (!(file instanceof File) || file.size === 0) {
+      notification('Sélectionnez un fichier CSV ou XLSX.', 'error');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      notification('Le fichier dépasse la limite de 5 Mio.', 'error');
+      return;
+    }
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    resultRegion.innerHTML = '<h2>Validation en cours…</h2>';
+    try {
+      pendingPayload = {
+        organizationId: state.user.organizationId,
+        kind: data.get('kind'),
+        classId: data.get('classId') || null,
+        fileName: file.name,
+        contentBase64: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
+        idempotencyKey: crypto.randomUUID()
+      };
+      const preview = await apiRequest('/imports/preview', { method: 'POST', body: JSON.stringify(pendingPayload) });
+      resultRegion.innerHTML = `<h2>2. Résultat de validation</h2>${renderImportResult(preview)}${preview.summary.invalid === 0 ? '<button class="primary-button" id="apply-import" type="button">Confirmer et appliquer en ligne</button>' : '<p>Corrigez toutes les erreurs avant l’application.</p>'}`;
+      document.querySelector('#apply-import')?.addEventListener('click', async (applyEvent) => {
+        if (!navigator.onLine || !window.confirm('Confirmer l’import officiel de toutes les lignes valides ?')) return;
+        applyEvent.currentTarget.disabled = true;
+        try {
+          const applied = await apiRequest('/imports/apply', {
+            method: 'POST',
+            body: JSON.stringify({ ...pendingPayload, confirmed: true })
+          });
+          resultRegion.innerHTML = `<h2>Import terminé</h2>${renderImportResult(applied)}${applied.credentials?.length ? '<button class="primary-button" id="credentials-download" type="button">Télécharger les identifiants temporaires (une fois)</button>' : ''}`;
+          if (applied.credentials?.length) {
+            let credentials = applied.credentials;
+            document.querySelector('#credentials-download').addEventListener('click', (downloadEvent) => {
+              const escape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+              downloadText(`identifiants-${applied.batchId}.csv`, [
+                'rowNumber,username,email,temporaryPassword',
+                ...credentials.map((item) => [item.rowNumber, item.username, item.email, item.temporaryPassword].map(escape).join(','))
+              ].join('\n'));
+              credentials = [];
+              applied.credentials = [];
+              downloadEvent.currentTarget.disabled = true;
+              downloadEvent.currentTarget.textContent = 'Identifiants téléchargés';
+            }, { once: true });
+          }
+          pendingPayload = null;
+        } catch (error) {
+          notification(error.message, 'error');
+          applyEvent.currentTarget.disabled = false;
+        }
+      });
+    } catch (error) {
+      pendingPayload = null;
+      resultRegion.innerHTML = `<h2>Validation impossible</h2><p class="feedback feedback--error">${escapeHtml(error.message)}</p>`;
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
+async function profilePage() {
+  app.innerHTML = shell('<main class="content-stack"><section class="page-heading"><p class="section-label">Identité</p><h1>Mon profil</h1><p>Chargement du profil privé…</p></section></main>', 'myProfile');
+  bindShell();
+  try {
+    const profile = await apiRequest('/profile/me');
+    app.innerHTML = shell(`
+      <main class="content-stack" id="main-content">
+        <section class="page-heading"><p class="section-label">Self-service limité</p><h1>Mon profil</h1><p>Vous pouvez modifier vos contacts et préférences. Les rôles, affectations et champs officiels restent administrés par l’établissement.</p><a class="help-link" href="/help#profiles">Confidentialité et permissions</a></section>
+        <section class="surface-card profile-layout">
+          <div>
+            ${profile.avatar ? `<img class="profile-avatar" data-secure-image="/people/${encodeURIComponent(profile.id)}/avatar" alt="Photo de profil">` : '<div class="profile-avatar profile-avatar--empty" aria-label="Aucune photo">?</div>'}
+            <form id="avatar-form"><label>Photo PNG/JPEG (2 Mio maximum)<input name="file" type="file" accept="image/png,image/jpeg" required></label><button class="secondary-button" type="submit">Remplacer la photo</button></form>
+          </div>
+          <form id="profile-form" class="form-grid">
+            <label>Prénom officiel<input value="${escapeHtml(profile.givenName)}" disabled></label>
+            <label>Nom officiel<input value="${escapeHtml(profile.familyName)}" disabled></label>
+            <label>Nom usuel<input name="preferredName" value="${escapeHtml(profile.preferredName ?? '')}"></label>
+            <label>Langue<select name="preferredLocale">${SUPPORTED_LOCALES.map((locale) => `<option value="${locale}" ${profile.preferredLocale === locale ? 'selected' : ''}>${locale.toUpperCase()}</option>`).join('')}</select></label>
+            <label>Pays<select name="countryCode"><option value="">Non renseigné</option>${countryOptions(profile.countryCode)}</select></label>
+            <label>Fuseau horaire<input name="timezone" value="${escapeHtml(profile.timezone ?? '')}" placeholder="Africa/Dakar"></label>
+            <label class="form-wide">Adresse<textarea name="address">${escapeHtml(profile.address ?? '')}</textarea></label>
+            <label class="form-wide">Biographie<textarea name="bio">${escapeHtml(profile.bio ?? '')}</textarea></label>
+            <label class="form-wide">Contacts (JSON)<textarea name="contacts">${escapeHtml(JSON.stringify(profile.contacts ?? []))}</textarea></label>
+            <label class="form-wide">Préférences d’accessibilité (JSON)<textarea name="accessibility">${escapeHtml(JSON.stringify(profile.accessibility ?? {}))}</textarea></label>
+            <label class="form-wide">Préférences de notification (JSON)<textarea name="notifications">${escapeHtml(JSON.stringify(profile.notifications ?? {}))}</textarea></label>
+            <label class="checkbox-row"><input name="privacyConsent" type="checkbox" ${profile.privacyConsent ? 'checked' : ''}> J’accepte le stockage des informations privées optionnelles.</label>
+            <label class="form-wide">Contact d’urgence (JSON, avec consentement)<textarea name="emergencyContact">${escapeHtml(JSON.stringify(profile.emergencyContact ?? null))}</textarea></label>
+            <button class="primary-button" type="submit">Enregistrer mes préférences</button>
+          </form>
+        </section>
+        <section class="surface-card resource-section"><h2>Rôles et affectations en lecture seule</h2><p>${profile.roles.map((role) => escapeHtml(role.name)).join(' · ') || 'Aucun rôle affiché.'}</p><p>${profile.professionalAssignments.map((assignment) => escapeHtml(assignment.roleTitle)).join(' · ') || 'Aucune affectation professionnelle.'}</p></section>
+      </main>`, 'myProfile');
+    bindShell();
+    await loadSecureImages();
+    document.querySelector('#profile-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = new FormData(event.currentTarget);
+      const body = Object.fromEntries(data.entries());
+      try {
+        body.privacyConsent = data.get('privacyConsent') === 'on';
+        for (const field of ['contacts', 'accessibility', 'notifications', 'emergencyContact']) {
+          body[field] = JSON.parse(body[field] || (field === 'contacts' ? '[]' : '{}'));
+        }
+        if (!body.address) delete body.address;
+        await apiRequest('/profile/me', { method: 'PUT', body: JSON.stringify(body) });
+        notification('Profil enregistré.');
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    });
+    document.querySelector('#avatar-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = new FormData(event.currentTarget);
+      try {
+        await apiUpload('/profile/me/avatar', data);
+        notification('Photo de profil enregistrée.');
+        await profilePage();
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    });
+  } catch (error) {
+    notification(error.message, 'error');
+  }
+}
+
+async function identityAssetsPage() {
+  app.innerHTML = shell('<main class="content-stack"><section class="page-heading"><p class="section-label">Identité institutionnelle</p><h1>Logo, signatures et preuves</h1><p>Chargement des médias sécurisés…</p></section></main>', 'identityAssets');
+  bindShell();
+  const organizationId = state.user.organizationId;
+  try {
+    const [branding, signatures, people, documents] = await Promise.all([
+      can('organizations.read') ? apiRequest(`/organizations/${organizationId}/branding`) : null,
+      can('credentials.read') ? apiRequest(`/signatures?organizationId=${encodeURIComponent(organizationId)}`) : { items: [] },
+      can('people.read') ? apiRequest('/people?limit=200') : { items: [] },
+      can('documents.read') ? apiRequest('/documents?limit=200') : { items: [] }
+    ]);
+    const evidence = documents.items.filter((document) => document.metadata?.source === 'evidence-upload');
+    const peopleOptions = people.items.map((person) => `<option value="${escapeHtml(person.id)}">${escapeHtml(`${person.givenName} ${person.familyName}`)}</option>`).join('');
+    app.innerHTML = shell(`
+      <main class="content-stack" id="main-content">
+        <section class="page-heading"><p class="section-label">Configuration et dossiers</p><h1>Identité, signatures et preuves</h1><p>Les images et preuves sont vérifiées puis stockées en base; aucune signature électronique qualifiée n’est revendiquée.</p><a class="help-link" href="/help#documents">Règles, limites et workflow</a></section>
+        ${can('organizations.write') ? `<section class="surface-card resource-section"><h2>Logo institutionnel</h2>${branding ? `<img class="institution-logo-preview" src="/public/organizations/${encodeURIComponent(organizationId)}/logo" alt="${escapeHtml(branding.altText)}"><p>SHA-256 ${escapeHtml(branding.sha256)}</p>` : '<p class="empty-state">Aucun logo configuré.</p>'}<form id="logo-form" class="form-grid"><label>Logo PNG/JPEG (1 Mio, 4096×4096 max.)<input name="file" type="file" accept="image/png,image/jpeg" required></label><label>Texte alternatif<input name="altText" value="Logo institutionnel" required></label><button class="primary-button" type="submit">${branding ? 'Remplacer' : 'Ajouter'} le logo</button>${branding ? '<button class="danger-button" id="remove-logo" type="button">Supprimer le logo</button>' : ''}</form></section>` : ''}
+        ${can('credentials.write') ? `<section class="surface-card resource-section"><h2>Signataires habilités</h2><p>Une signature est une marque visuelle auditée, révocable et liée à une personne/fonction.</p><form id="signature-form" class="form-grid"><label>Titulaire<select name="personId" required><option value="">Sélectionner</option>${peopleOptions}</select></label><label>Fonction<input name="function" required></label><label>Objectif<input name="purpose" required placeholder="Délivrance des attestations"></label><label>Image PNG/JPEG (1 Mio)<input name="file" type="file" accept="image/png,image/jpeg" required></label><button class="primary-button" type="submit">Ajouter la signature</button></form><div class="record-grid">${signatures.items.map((signature) => `<article class="record-card"><img class="signature-preview" data-secure-image="/signatures/${encodeURIComponent(signature.id)}/content" alt="Signature de ${escapeHtml(signature.holderName)}"><h3>${escapeHtml(signature.holderName)}</h3><p>${escapeHtml(signature.function)} · ${escapeHtml(signature.purpose)}</p><p>${signature.active ? 'Active' : 'Révoquée'} · SHA-256 ${escapeHtml(signature.sha256.slice(0, 12))}…</p>${signature.active ? `<button class="danger-button" data-revoke-signature="${escapeHtml(signature.id)}" type="button">Révoquer</button>` : ''}</article>`).join('') || '<p class="empty-state">Aucun signataire configuré.</p>'}</div></section>` : ''}
+        ${can('documents.write') ? `<section class="surface-card resource-section"><h2>Importer un document de preuve</h2><form id="evidence-form" class="form-grid"><label>Personne<select name="personId" required><option value="">Sélectionner</option>${peopleOptions}</select></label><label>Type<select name="type"><option value="receipt">Reçu</option><option value="report-card">Bulletin</option><option value="certificate">Certificat</option><option value="attestation">Attestation</option><option value="diploma">Diplôme</option></select></label><label>Titre<input name="title" required></label><label>Fichier PDF/PNG/JPEG (8 Mio)<input name="file" type="file" accept="application/pdf,image/png,image/jpeg" required></label><button class="primary-button" type="submit">Importer la preuve</button></form></section>` : ''}
+        <section class="surface-card resource-section"><h2>Preuves importées</h2><div class="record-grid">${evidence.map((document) => `<article class="record-card"><h3>${escapeHtml(document.title)}</h3><p>${escapeHtml(document.type)} · ${escapeHtml(document.metadata.verification.status)}</p><p>SHA-256 ${escapeHtml(document.fileHash.slice(0, 16))}…</p><button class="secondary-button" data-download-evidence="${escapeHtml(document.id)}" data-file-name="${escapeHtml(document.metadata.fileName)}" type="button">Télécharger</button>${can('documents.verify') && document.metadata.verification.status === 'pending' ? `<button class="primary-button" data-verify-evidence="${escapeHtml(document.id)}" type="button">Valider</button>` : ''}</article>`).join('') || '<p class="empty-state">Aucune preuve importée.</p>'}</div></section>
+      </main>`, 'identityAssets');
+    bindShell();
+    await loadSecureImages();
+    for (const [formId, path] of [['logo-form', `/organizations/${organizationId}/branding/logo`], ['signature-form', '/signatures'], ['evidence-form', '/documents/evidence']]) {
+      document.querySelector(`#${formId}`)?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        if (formId !== 'logo-form') data.append('organizationId', organizationId);
+        try {
+          await apiUpload(path, data);
+          notification('Fichier enregistré et audité.');
+          await identityAssetsPage();
+        } catch (error) {
+          notification(error.message, 'error');
+        }
+      });
+    }
+    document.querySelector('#remove-logo')?.addEventListener('click', async () => {
+      if (!window.confirm('Supprimer le logo institutionnel ?')) return;
+      try {
+        await apiRequest(`/organizations/${organizationId}/branding/logo`, { method: 'DELETE' });
+        await identityAssetsPage();
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    });
+    document.querySelectorAll('[data-revoke-signature]').forEach((button) => button.addEventListener('click', async () => {
+      const reason = window.prompt('Motif de révocation');
+      if (!reason) return;
+      try {
+        await apiRequest(`/signatures/${button.dataset.revokeSignature}/revoke`, { method: 'POST', body: JSON.stringify({ reason }) });
+        await identityAssetsPage();
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    }));
+    document.querySelectorAll('[data-download-evidence]').forEach((button) => button.addEventListener('click', () =>
+      downloadAuthenticated(`/documents/${button.dataset.downloadEvidence}/content`, button.dataset.fileName)
+        .catch((error) => notification(error.message, 'error'))
+    ));
+    document.querySelectorAll('[data-verify-evidence]').forEach((button) => button.addEventListener('click', async () => {
+      try {
+        await apiRequest(`/documents/${button.dataset.verifyEvidence}/verification`, {
+          method: 'POST',
+          body: JSON.stringify({ status: 'verified' })
+        });
+        await identityAssetsPage();
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    }));
+  } catch (error) {
+    notification(error.message, 'error');
+  }
+}
+
+async function learningPathPage() {
+  app.innerHTML = shell('<main class="content-stack"><section class="page-heading"><p class="section-label">Apprentissage</p><h1>Mon parcours</h1><p>Calcul des prérequis côté serveur…</p></section></main>', 'learningPath');
+  bindShell();
+  try {
+    const [enrollments, signatures] = await Promise.all([
+      apiRequest('/lms/enrollments?limit=100'),
+      can('credentials.read')
+        ? apiRequest(`/signatures?organizationId=${encodeURIComponent(state.user.organizationId)}`)
+        : { items: [] }
+    ]);
+    const activeSignatures = signatures.items.filter((signature) => signature.active && !signature.revokedAt);
+    const accessible = [];
+    for (const enrollment of enrollments.items) {
+      try {
+        accessible.push({ enrollment, progress: await apiRequest(`/lms/enrollments/${enrollment.id}/progress-detail`) });
+      } catch {
+        // Other learners' enrollments are intentionally hidden.
+      }
+    }
+    app.innerHTML = shell(`
+      <main class="content-stack" id="main-content">
+        <section class="page-heading"><p class="section-label">Parcours serveur</p><h1>Leçons, examen final et titres</h1><p>Les leçons suivantes et l’examen restent verrouillés tant que les exigences précédentes ne sont pas satisfaites.</p><a class="help-link" href="/help#lms">Comprendre les règles de progression</a></section>
+        ${accessible.map(({ enrollment, progress }) => `<section class="surface-card resource-section"><div class="section-header"><div><p class="section-label">Inscription ${escapeHtml(enrollment.id)}</p><h2>${progress.percent}% terminé</h2></div><strong>${progress.eligibleForTitle ? 'Titre délivrable' : progress.finalExamUnlocked ? 'Examen final disponible' : 'Parcours en cours'}</strong></div><div class="progress-track" role="progressbar" aria-label="Progression du parcours" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.percent}"><span style="width:${progress.percent}%"></span></div><ol class="learning-sequence">${progress.lessons.map((lesson) => `<li class="${lesson.locked ? 'is-locked' : lesson.completed ? 'is-complete' : ''}"><strong>${escapeHtml(lesson.title)}</strong><span>${lesson.completed ? 'Validée' : lesson.locked ? escapeHtml(lesson.lockReason) : 'Disponible'}</span>${!lesson.completed && !lesson.locked ? `<button class="primary-button" data-complete-lesson="${escapeHtml(lesson.id)}" data-enrollment="${escapeHtml(enrollment.id)}" type="button">Valider la leçon</button>` : ''}</li>`).join('')}</ol>${progress.eligibleForTitle && can('lms.write') && can('credentials.write') ? `<form class="title-form form-grid" data-enrollment="${escapeHtml(enrollment.id)}"><label>Type de titre<select name="titleType"><option value="certificate">Certificat</option><option value="attestation">Attestation</option><option value="diploma">Diplôme</option></select></label><label>Signataire actif<select name="signatureId" required><option value="">Sélectionner</option>${activeSignatures.map((signature) => `<option value="${escapeHtml(signature.id)}">${escapeHtml(signature.holderName)} — ${escapeHtml(signature.function)}</option>`).join('')}</select></label><button class="primary-button" type="submit" ${activeSignatures.length ? '' : 'disabled'}>Délivrer le titre</button><small class="form-wide">${activeSignatures.length ? 'Titre émis par la plateforme; aucune accréditation officielle n’est affirmée sans autorité configurée.' : 'Configurez d’abord un signataire actif dans Identité & preuves.'}</small></form>` : ''}</section>`).join('') || '<section class="surface-card empty-state"><h2>Aucun parcours accessible</h2><p>Un administrateur doit créer un participant et une inscription LMS.</p></section>'}
+      </main>`, 'learningPath');
+    bindShell();
+    document.querySelectorAll('[data-complete-lesson]').forEach((button) => button.addEventListener('click', async () => {
+      try {
+        await apiRequest(`/lms/enrollments/${button.dataset.enrollment}/lessons/${button.dataset.completeLesson}/complete`, {
+          method: 'POST',
+          body: '{}'
+        });
+        await learningPathPage();
+      } catch (error) {
+        notification(error.message, 'error');
+      }
+    }));
+    document.querySelectorAll('.title-form').forEach((form) => form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const printWindow = window.open('', '_blank');
+      try {
+        const body = Object.fromEntries(new FormData(event.currentTarget));
+        body.signatureIds = [body.signatureId];
+        delete body.signatureId;
+        const result = await apiRequest(`/lms/enrollments/${event.currentTarget.dataset.enrollment}/titles`, {
+          method: 'POST',
+          body: JSON.stringify(body)
+        });
+        notification(`Titre ${result.credential.credentialNumber} délivré.`);
+        await openAuthenticatedHtml(`/credentials/${result.credential.id}/print`, printWindow);
+      } catch (error) {
+        printWindow?.close();
+        notification(error.message, 'error');
+      }
+    }));
+  } catch (error) {
+    notification(error.message, 'error');
+  }
+}
+
+async function helpPage() {
+  app.innerHTML = shell('<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">Aide</p><h1>Guide des modules</h1><p>Chargement du guide versionné…</p></section></main>', 'help');
+  bindShell();
+  try {
+    const help = await apiRequest('/support/help');
+    app.innerHTML = shell(`
+      <main class="content-stack" id="main-content">
+        <section class="page-heading"><p class="section-label">Guide v${escapeHtml(help.version)}</p><h1>Guide des modules</h1><p>Permissions, prérequis, actions et parcours recommandés. La traduction métier est progressive avec fallback français non vide.</p></section>
+        ${help.guides.map((guide) => `<section class="surface-card resource-section" id="${escapeHtml(guide.id)}"><p class="section-label">${escapeHtml(guide.audience.join(' · '))}</p><h2>${escapeHtml(guide.title)}</h2><p><strong>Permissions :</strong> ${guide.permissions.map(escapeHtml).join(', ')}</p><p><strong>Prérequis :</strong> ${guide.prerequisites.map(escapeHtml).join(' → ')}</p><ol>${guide.workflow.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol><p><strong>Actions :</strong> ${guide.actions.map(escapeHtml).join(' · ')}</p></section>`).join('')}
+        <section class="surface-card resource-section"><h2>Questions fréquentes</h2>${help.faq.map((item) => `<details><summary>${escapeHtml(item.question)}</summary><p>${escapeHtml(item.answer)}</p></details>`).join('')}</section>
+      </main>`, 'help');
     bindShell();
   } catch (error) {
     notification(error.message, 'error');
@@ -1076,6 +1583,9 @@ function bindShell() {
   const navigation = document.querySelector('#shell-nav');
   const toggle = document.querySelector('#menu-toggle');
   const backdrop = document.querySelector('#nav-backdrop');
+  document.querySelector('.tenant-logo')?.addEventListener('error', (event) => {
+    event.currentTarget.hidden = true;
+  }, { once: true });
   const setOpen = (open) => {
     navigation?.setAttribute('data-open', String(open));
     toggle?.setAttribute('aria-expanded', String(open));
@@ -1089,9 +1599,14 @@ function bindShell() {
       toggle?.focus();
     }
   }, { once: true });
-  document.querySelector('#locale-switch')?.addEventListener('change', (event) => {
+  document.querySelector('#locale-switch')?.addEventListener('change', async (event) => {
     state.locale = event.target.value;
     window.localStorage.setItem('eduplateforme.locale', state.locale);
+    applyLocale();
+    await apiRequest('/auth/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ locale: state.locale })
+    }).catch(() => {});
     window.location.reload();
   });
   document.querySelector('#logout')?.addEventListener('click', async () => {
@@ -1252,7 +1767,9 @@ async function loadCurrentUser() {
     state.user = await apiRequest('/auth/me');
     if (!window.localStorage.getItem('eduplateforme.locale')) {
       const profile = await apiRequest('/i18n/profile').catch(() => null);
-      state.locale = profile?.language ?? state.user.profile?.preferredLocale ?? state.locale;
+      state.locale = state.user.locale ?? profile?.language ?? state.user.profile?.preferredLocale ?? state.locale;
+      if (!SUPPORTED_LOCALES.includes(state.locale)) state.locale = 'fr';
+      applyLocale();
     }
     return true;
   } catch {
@@ -1265,7 +1782,7 @@ async function loadCurrentUser() {
 async function route() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
   const publicPath = path === '/' || path === '/login' || path === '/register'
-    || path === '/verify-institution' || path === '/verify-credential';
+    || path === '/verify-institution' || path === '/verify-credential' || path === '/password-change';
   const authenticationEntryPath = path === '/' || path === '/login' || path === '/register';
   const authenticated = await loadCurrentUser();
 
@@ -1312,7 +1829,7 @@ async function route() {
           <dl>
             <div><dt>Statut</dt><dd>${escapeHtml(result.status)}</dd></div>
             <div><dt>Nom légal</dt><dd>${escapeHtml(result.institution.legalName)}</dd></div>
-            <div><dt>Pays</dt><dd>${escapeHtml(result.institution.countryCode)}</dd></div>
+            <div><dt>Pays</dt><dd>${escapeHtml(countryIndicator(result.institution.countryCode))}</dd></div>
             <div><dt>Autorité</dt><dd>${formatValue(result.authority)}</dd></div>
           </dl>`;
       } catch (error) {
@@ -1397,6 +1914,11 @@ async function route() {
             <button class="primary-button" type="submit">Valider le second facteur</button>`;
           return;
         }
+        if (payload.passwordChangeRequired) {
+          window.sessionStorage.setItem('eduplateforme.passwordChangeChallenge', payload.challengeToken);
+          window.location.assign('/password-change');
+          return;
+        }
         setToken(payload.accessToken);
         state.user = payload.user;
         window.location.assign(kind === 'register' ? '/onboarding' : '/dashboard');
@@ -1404,6 +1926,49 @@ async function route() {
         notification(error.message, 'error');
         button.disabled = false;
         button.textContent = kind === 'register' ? 'Créer mon compte' : 'Se connecter';
+      }
+    });
+    return;
+  }
+  if (path === '/password-change') {
+    const challengeToken = window.sessionStorage.getItem('eduplateforme.passwordChangeChallenge');
+    if (!challengeToken) {
+      window.location.replace('/login');
+      return;
+    }
+    app.innerHTML = `
+      <main class="public-layout" id="main-content">
+        <a class="brand-mark public-brand" href="/">Eduplateforme</a>
+        <section class="auth-card surface-card">
+          <p class="section-label">Première connexion</p>
+          <h1>Remplacez le mot de passe temporaire</h1>
+          <p class="section-copy">Définissez un mot de passe personnel d’au moins 10 caractères avant tout accès aux données.</p>
+          <div id="feedback" class="feedback" role="alert" tabindex="-1" hidden></div>
+          <form id="password-change-form" class="form-grid">
+            <label class="form-wide">Nouveau mot de passe<input name="password" type="password" minlength="10" autocomplete="new-password" required></label>
+            <label class="form-wide">Confirmation<input name="confirmation" type="password" minlength="10" autocomplete="new-password" required></label>
+            <button class="primary-button" type="submit">Enregistrer et continuer</button>
+          </form>
+        </section>
+      </main>`;
+    document.querySelector('#password-change-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const values = new FormData(event.currentTarget);
+      if (values.get('password') !== values.get('confirmation')) {
+        notification('Les mots de passe ne correspondent pas.', 'error');
+        return;
+      }
+      try {
+        const payload = await apiRequest('/auth/password/change-required', {
+          method: 'POST',
+          body: JSON.stringify({ challengeToken, password: values.get('password') })
+        }, false);
+        window.sessionStorage.removeItem('eduplateforme.passwordChangeChallenge');
+        setToken(payload.accessToken);
+        state.user = payload.user;
+        window.location.assign('/dashboard');
+      } catch (error) {
+        notification(error.message, 'error');
       }
     });
     return;
@@ -1438,6 +2003,26 @@ async function route() {
   }
   if (path === '/dashboard') {
     await dashboard();
+    return;
+  }
+  if (path === '/imports') {
+    await importsPage();
+    return;
+  }
+  if (path === '/profile') {
+    await profilePage();
+    return;
+  }
+  if (path === '/identity-assets') {
+    await identityAssetsPage();
+    return;
+  }
+  if (path === '/learning-path') {
+    await learningPathPage();
+    return;
+  }
+  if (path === '/help') {
+    await helpPage();
     return;
   }
   const module = modules.find((candidate) => candidate.path === path);

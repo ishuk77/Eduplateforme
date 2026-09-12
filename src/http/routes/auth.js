@@ -51,6 +51,14 @@ export function registerAuthRoutes(router, { service }) {
     return withRefreshCookie(await service.completeMfaChallenge(body.challengeToken, body.code));
   });
 
+  router.add('POST', '/auth/password/change-required', async (request) => {
+    const body = await parseJson(request);
+    if (!body.challengeToken || !body.password) {
+      throw new ApiError('INVALID_INPUT', 'challengeToken and password are required.', 400);
+    }
+    return withRefreshCookie(await service.completeRequiredPasswordChange(body.challengeToken, body.password));
+  });
+
   router.add('POST', '/auth/register', async (request) => {
     const body = await parseJson(request, registrationSchema);
     const { account } = await service.registerUser(body);
@@ -92,6 +100,12 @@ export function registerAuthRoutes(router, { service }) {
     }
     authorizeRequest(request, service, { organizationId });
     return Response.json(service.getAuthenticatedUserByAccountId(identity.accountId, organizationId));
+  });
+
+  router.add('PUT', '/auth/preferences', async (request) => {
+    const identity = requireIdentity(request, service);
+    const body = await parseJson(request);
+    return Response.json(await service.updateUserLocale(identity.accountId, body.locale));
   });
 
   router.add('GET', '/auth/validate', async (request) => {

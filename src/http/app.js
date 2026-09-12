@@ -30,6 +30,7 @@ import { registerAuditRoutes } from './routes/audit.js';
 import { registerInstitutionalRoutes } from './routes/institutional.js';
 import { registerLearningSystemRoutes } from './routes/learning-systems.js';
 import { registerOperationsRoutes } from './routes/operations.js';
+import { registerImportRoutes } from './routes/imports.js';
 import { modules, resolveModule } from '../modules.js';
 import { renderAppShell } from '../template.js';
 import { ApiError } from '../shared/errors.js';
@@ -71,7 +72,9 @@ function withSecurityHeaders(response, corsOrigin) {
   if (corsOrigin) {
     connectSources.push(corsOrigin);
   }
-  headers.set('content-security-policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ${connectSources.join(' ')}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`);
+  if (!headers.has('content-security-policy')) {
+    headers.set('content-security-policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src ${connectSources.join(' ')}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`);
+  }
   return new Response(response.body, { status: response.status, headers });
 }
 
@@ -107,6 +110,7 @@ function createOpenApiDescription() {
       '/auth/login': { post: { summary: 'Authenticate with username and password' } },
       '/auth/refresh': { post: { summary: 'Refresh an access token' } },
       '/auth/logout': { delete: { summary: 'Revoke a refresh token' } },
+      '/auth/password/change-required': { post: { summary: 'Replace a temporary password before first access' } },
       '/auth/me': { get: { summary: 'Return the authenticated user' } },
       '/organizations': { get: { summary: 'List organizations' }, post: { summary: 'Create organization' } },
       '/people': { get: { summary: 'List people' }, post: { summary: 'Create person' } },
@@ -115,6 +119,8 @@ function createOpenApiDescription() {
       '/academics/programs': { get: { summary: 'List programs' }, post: { summary: 'Create program' } },
       '/academics/classes': { get: { summary: 'List classes' }, post: { summary: 'Create class' } },
       '/academics/enrollments': { get: { summary: 'List enrollments' }, post: { summary: 'Create enrollment' } },
+      '/imports/preview': { post: { summary: 'Validate a tenant-scoped CSV or XLSX import without writing' } },
+      '/imports/apply': { post: { summary: 'Apply a validated tenant-scoped import transactionally' } },
       '/documents': { get: { summary: 'List documents' }, post: { summary: 'Create document' } },
       '/document-templates': { get: { summary: 'List official document templates' }, post: { summary: 'Create a versioned document template' } },
       '/credentials': { get: { summary: 'List credentials' }, post: { summary: 'Create credential' } },
@@ -155,6 +161,17 @@ function createOpenApiDescription() {
       '/lms/programs': { get: { summary: 'List LMS programs' }, post: { summary: 'Create LMS program linked to academics' } },
       '/lms/courses': { get: { summary: 'List LMS courses' }, post: { summary: 'Create LMS course linked to an academic course' } },
       '/lms/quizzes/{id}/attempts': { post: { summary: 'Submit and score a quiz attempt' } },
+      '/lms/enrollments/{id}/lessons/{lessonId}/complete': { post: { summary: 'Complete an unlocked lesson after server-side prerequisite checks' } },
+      '/lms/enrollments/{id}/progress-detail': { get: { summary: 'Return server-computed lesson locks and title eligibility' } },
+      '/lms/enrollments/{id}/titles': { post: { summary: 'Issue an eligible platform title with an immutable signatory snapshot' } },
+      '/profile/me': { get: { summary: 'Get the current private profile' }, put: { summary: 'Update self-service profile fields' } },
+      '/profile/me/avatar': { post: { summary: 'Upload a validated PNG or JPEG avatar' } },
+      '/organizations/{id}/branding/logo': { post: { summary: 'Upload or replace the tenant logo' }, delete: { summary: 'Remove the tenant logo' } },
+      '/signatures': { get: { summary: 'List managed signatories' }, post: { summary: 'Create an auditable visual signature' } },
+      '/documents/evidence': { post: { summary: 'Upload bounded proof content to tenant database storage' } },
+      '/documents/{id}/content': { get: { summary: 'Download authorized proof content' } },
+      '/documents/{id}/verification': { post: { summary: 'Verify, reject, or expire uploaded evidence' } },
+      '/credentials/{id}/print': { get: { summary: 'Render an authenticated printable platform title' } },
       '/meetings': { get: { summary: 'List external meetings' }, post: { summary: 'Prepare an external meeting reference' } },
       '/meetings/{id}/attendance/import': { post: { summary: 'Import attendance through a configured adapter' } },
       '/data-quality/runs/execute': { post: { summary: 'Execute tenant and country data quality rules' } },
@@ -223,6 +240,7 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
   registerInstitutionalRoutes(router, context);
   registerLearningSystemRoutes(router, context);
   registerOperationsRoutes(router, context);
+  registerImportRoutes(router, context);
 
   return async function app(request) {
     let corsOrigin = null;
@@ -260,7 +278,7 @@ export function createApp({ foundation = createPersistentEducationPlatformServic
       }
 
       enforceRateLimit(request, { namespace: 'api' });
-      if (['/auth/login', '/auth/register', '/auth/refresh', '/auth/mfa/challenge', '/auth/mfa/confirm'].includes(url.pathname)) {
+      if (['/auth/login', '/auth/register', '/auth/refresh', '/auth/mfa/challenge', '/auth/mfa/confirm', '/auth/password/change-required'].includes(url.pathname)) {
         enforceRateLimit(request, {
           namespace: 'authentication',
           limit: Number.parseInt(process.env.AUTH_RATE_LIMIT_MAX ?? '10', 10),

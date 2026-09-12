@@ -175,6 +175,60 @@ const moduleLookup = new Map([
     description: 'Configurez votre premier établissement.',
     highlights: []
   }],
+  ['/password-change', {
+    id: 'passwordChange',
+    path: '/password-change',
+    label: 'Changer le mot de passe',
+    eyebrow: 'Sécurité',
+    title: 'Changer le mot de passe temporaire',
+    description: 'Définissez un mot de passe personnel avant d’accéder à votre espace.',
+    highlights: []
+  }],
+  ['/help', {
+    id: 'help',
+    path: '/help',
+    label: 'Guide des modules',
+    eyebrow: 'Aide',
+    title: 'Guide des modules',
+    description: 'Prérequis, permissions et parcours par rôle.',
+    highlights: []
+  }],
+  ['/imports', {
+    id: 'imports',
+    path: '/imports',
+    label: 'Imports',
+    eyebrow: 'Opérations quotidiennes',
+    title: 'Imports CSV/XLSX',
+    description: 'Prévisualisez et appliquez des imports tenant transactionnels.',
+    highlights: []
+  }],
+  ['/profile', {
+    id: 'myProfile',
+    path: '/profile',
+    label: 'Mon profil',
+    eyebrow: 'Identité',
+    title: 'Profil et préférences',
+    description: 'Gérez les informations personnelles autorisées sans modifier vos rôles.',
+    highlights: []
+  }],
+  ['/identity-assets', {
+    id: 'identityAssets',
+    path: '/identity-assets',
+    label: 'Identité et preuves',
+    eyebrow: 'Configuration',
+    title: 'Logo, signatures et preuves',
+    description: 'Téléversez des médias validés, tenant-scoped et audités.',
+    highlights: []
+  }],
+  ['/learning-path', {
+    id: 'learningPath',
+    path: '/learning-path',
+    label: 'Mon parcours',
+    eyebrow: 'Apprentissage',
+    title: 'Progression et titres',
+    description: 'Suivez les prérequis, quiz, examens et titres émis.',
+    highlights: []
+  }],
   ['/verify-institution', {
     id: 'publicVerification',
     path: '/verify-institution',

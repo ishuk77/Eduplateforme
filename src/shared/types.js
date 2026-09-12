@@ -24,6 +24,7 @@ export const onboardingSchema = z.object({
   displayName: z.string().trim().min(2, 'displayName is required'),
   internalReference: z.string().trim().min(2, 'internalReference is required'),
   countryCode: z.string().trim().length(2, 'countryCode must contain 2 characters'),
+  locale: z.enum(['fr', 'en', 'es', 'pt', 'ar']).default('fr'),
   organizationType: z.string().trim().min(1).default('institution'),
   nationalInstitutionId: z.string().trim().min(1).optional().nullable(),
   legalForm: z.string().trim().min(1).optional().nullable(),

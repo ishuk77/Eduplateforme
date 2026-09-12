@@ -87,6 +87,15 @@ import {
   hashRecoveryCode,
   verifyTotp
 } from '../security/totp.js';
+import { executeBulkImport } from './bulk-import-service.js';
+import {
+  assertEvidenceType,
+  createAssetRecord,
+  deleteBlob,
+  readBlob,
+  saveBlob,
+  validateAsset
+} from './secure-assets-service.js';
 
 const COLLECTIONS = {
   organizations: { hydrate: (value) => new Organization(value), repository: (connection) => new OrganizationRepository({ connection }) },
@@ -105,6 +114,8 @@ const COLLECTIONS = {
   credentials: { hydrate: (value) => new CredentialRecord(value) },
   documentTemplates: { hydrate: (value) => new DocumentTemplate(value) },
   documentShares: { hydrate: (value) => new DocumentShare(value), sensitive: true },
+  tenantBranding: { hydrate: (value) => new PlatformRecord(value) },
+  managedSignatures: { hydrate: (value) => new PlatformRecord(value), sensitive: true },
   consents: { hydrate: (value) => new ConsentRecord(value), sensitive: true },
   collaborationRequests: { hydrate: (value) => new CollaborationRequest(value), sensitive: true },
   transfers: { hydrate: (value) => new TransferRecord(value), sensitive: true },
@@ -180,6 +191,7 @@ const COLLECTIONS = {
   aiAssistanceRequests: { hydrate: (value) => new OperationalRecord(value), sensitive: true },
   incidents: { hydrate: (value) => new OperationalRecord(value) },
   syncJournal: { hydrate: (value) => new OperationalRecord(value), sensitive: true },
+  importBatches: { hydrate: (value) => ({ ...value }), sensitive: true },
   events: { hydrate: (value) => new DomainEvent(value), isArray: true }
 };
 
@@ -196,6 +208,8 @@ const RESOURCE_TO_COLLECTION = {
   credentials: 'credentials',
   documentTemplates: 'documentTemplates',
   documentShares: 'documentShares',
+  tenantBranding: 'tenantBranding',
+  managedSignatures: 'managedSignatures',
   consents: 'consents',
   collaborationRequests: 'collaborationRequests',
   transfers: 'transfers',
@@ -280,7 +294,8 @@ const RESOURCE_TO_COLLECTION = {
   backupOperations: 'backupOperations',
   aiAssistanceRequests: 'aiAssistanceRequests',
   incidents: 'incidents',
-  syncJournal: 'syncJournal'
+  syncJournal: 'syncJournal',
+  importBatches: 'importBatches'
 };
 
 const RESOURCE_ORGANIZATION_RESOLVER = {
@@ -303,6 +318,7 @@ const TENANT_ADMIN_PERMISSIONS = Object.freeze([
   'calendar.read', 'calendar.write',
   'subscriptions.read', 'subscriptions.write',
   'documents.read', 'documents.write',
+  'documents.verify',
   'credentials.read', 'credentials.write',
   'collaboration.read', 'collaboration.write',
   'transfers.read', 'transfers.write',
@@ -718,6 +734,358 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     return this.transactional(() => this.recordCreate('documents', super.registerDocument(input, actorId), actorId, 'document.create'));
   }
 
+  saveTenantLogo(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    const asset = validateAsset(input, 'logo');
+    const id = `branding:${input.organizationId}`;
+    const before = cloneRecord(this.tenantBranding.get(id));
+    const previousAssetId = before?.assetId ?? null;
+    const assetId = createPermanentId();
+    const branding = createAssetRecord({
+      id,
+      organizationId: input.organizationId,
+      assetId,
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+      byteLength: asset.byteLength,
+      sha256: asset.sha256,
+      dimensions: asset.dimensions,
+      altText: String(input.altText ?? 'Institution logo').trim() || 'Institution logo',
+      updatedBy: actorId
+    });
+    return this.transactional(() => {
+      saveBlob(this, { assetId, organizationId: input.organizationId, asset, actorId });
+      if (previousAssetId) deleteBlob(this, previousAssetId, input.organizationId);
+      return before
+        ? this.recordUpdate('tenantBranding', before, branding, actorId, 'tenant-branding.replace')
+        : this.recordCreate('tenantBranding', branding, actorId, 'tenant-branding.create');
+    });
+  }
+
+  getTenantLogo(organizationId) {
+    this.assertOrganizationContext(organizationId);
+    const branding = this.tenantBranding.get(`branding:${organizationId}`) ?? null;
+    return branding?.status === 'archived' ? null : branding;
+  }
+
+  async getTenantLogoContent(organizationId) {
+    const branding = this.getTenantLogo(organizationId);
+    if (!branding) throw new ValidationError('No logo is configured for this organization.');
+    return readBlob(this, branding.assetId, organizationId);
+  }
+
+  removeTenantLogo(organizationId, actorId = null) {
+    const branding = this.getTenantLogo(organizationId);
+    if (!branding) return false;
+    return this.transactional(() => {
+      deleteBlob(this, branding.assetId, organizationId);
+      const before = cloneRecord(branding);
+      branding.assetId = null;
+      branding.status = 'archived';
+      branding.archivedAt = new Date();
+      branding.touch();
+      this.recordUpdate('tenantBranding', before, branding, actorId, 'tenant-branding.remove');
+      return true;
+    });
+  }
+
+  createManagedSignature(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    if (this.listManagedSignatures(input.organizationId).filter((signature) => signature.status !== 'archived').length >= 100) {
+      throw new ValidationError('The organization has reached the limit of 100 managed signatures.');
+    }
+    const person = this.assertTenantRecord(this.people, input.personId, input.organizationId, 'signatory');
+    const purpose = String(input.purpose ?? '').trim();
+    if (!purpose) throw new ValidationError('purpose is required.');
+    const signatureType = input.signatureType ?? 'visual';
+    if (signatureType !== 'visual') {
+      throw new ValidationError('Only visual signature images are supported; no qualified electronic signature is claimed.');
+    }
+    const asset = validateAsset(input, 'signature');
+    const signature = createAssetRecord({
+      organizationId: input.organizationId,
+      personId: person.id,
+      holderName: `${person.givenName} ${person.familyName}`.trim(),
+      function: String(input.function ?? '').trim(),
+      purpose,
+      signatureType,
+      assetId: createPermanentId(),
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+      byteLength: asset.byteLength,
+      sha256: asset.sha256,
+      dimensions: asset.dimensions,
+      active: input.active !== false,
+      activatedAt: input.active === false ? null : new Date().toISOString(),
+      revokedAt: null,
+      revocationReason: null,
+      legalAssurance: 'visual-mark-only'
+    });
+    if (!signature.function) throw new ValidationError('function is required.');
+    return this.transactional(() => {
+      saveBlob(this, { assetId: signature.assetId, organizationId: signature.organizationId, asset, actorId });
+      return this.recordCreate('managedSignatures', signature, actorId, 'managed-signature.create');
+    });
+  }
+
+  revokeManagedSignature(signatureId, organizationId, input, actorId = null) {
+    const signature = this.assertTenantRecord(this.managedSignatures, signatureId, organizationId, 'signature');
+    if (!input.reason) throw new ValidationError('reason is required to revoke a signature.');
+    return this.transactional(() => {
+      const before = cloneRecord(signature);
+      signature.active = false;
+      signature.revokedAt = new Date().toISOString();
+      signature.revocationReason = String(input.reason);
+      signature.touch();
+      return this.recordUpdate('managedSignatures', before, signature, actorId, 'managed-signature.revoke', {
+        reason: input.reason
+      });
+    });
+  }
+
+  listManagedSignatures(organizationId, personId = null) {
+    return Array.from(this.managedSignatures.values()).filter((signature) =>
+      signature.organizationId === organizationId && (!personId || signature.personId === personId)
+    );
+  }
+
+  async getManagedSignatureContent(signatureId, organizationId) {
+    const signature = this.assertTenantRecord(this.managedSignatures, signatureId, organizationId, 'signature');
+    return readBlob(this, signature.assetId, organizationId);
+  }
+
+  uploadEvidenceDocument(input, actorId = null) {
+    this.assertOrganizationContext(input.organizationId);
+    if (Array.from(this.documents.values()).filter((document) =>
+      document.organizationId === input.organizationId && document.metadata?.source === 'evidence-upload'
+      && document.status !== 'archived'
+    ).length >= 1000) {
+      throw new ValidationError('The organization has reached the limit of 1,000 active evidence files.');
+    }
+    const person = this.assertTenantRecord(this.people, input.personId, input.organizationId, 'person');
+    const type = assertEvidenceType(input.type);
+    const asset = validateAsset(input, 'evidence');
+    const links = {};
+    for (const [field, collection] of [
+      ['enrollmentId', 'enrollments'],
+      ['paymentId', 'payments'],
+      ['resultId', 'grades'],
+      ['credentialId', 'credentials']
+    ]) {
+      if (input[field]) {
+        this.assertTenantRecord(this[collection], input[field], input.organizationId, field);
+        links[field] = input[field];
+      }
+    }
+    const documentId = createPermanentId();
+    return this.transactional(() => {
+      const document = FoundationService.prototype.registerDocument.call(this, {
+        id: documentId,
+        organizationId: input.organizationId,
+        personId: person.id,
+        type,
+        title: String(input.title ?? asset.fileName),
+        storageReference: `db://secure-assets/${documentId}`,
+        fileHash: asset.sha256,
+        accessLevel: input.accessLevel ?? 'holder',
+        metadata: {
+          source: 'evidence-upload',
+          fileName: asset.fileName,
+          mimeType: asset.mimeType,
+          byteLength: asset.byteLength,
+          dimensions: asset.dimensions,
+          links,
+          verification: {
+            status: 'pending',
+            submittedBy: actorId,
+            submittedAt: new Date().toISOString(),
+            verifiedBy: null,
+            verifiedAt: null,
+            reason: null
+          }
+        }
+      }, actorId);
+      this.recordCreate('documents', document, actorId, 'evidence.upload');
+      saveBlob(this, { assetId: documentId, organizationId: input.organizationId, asset, actorId });
+      return document;
+    });
+  }
+
+  async getEvidenceContent(documentId, organizationId) {
+    const document = this.assertTenantRecord(this.documents, documentId, organizationId, 'document');
+    if (document.metadata?.source !== 'evidence-upload') throw new ValidationError('Document has no uploaded evidence content.');
+    return readBlob(this, document.id, organizationId);
+  }
+
+  verifyEvidenceDocument(documentId, organizationId, input, actorId = null) {
+    const document = this.assertTenantRecord(this.documents, documentId, organizationId, 'document');
+    if (document.metadata?.source !== 'evidence-upload') throw new ValidationError('Document is not uploaded evidence.');
+    const status = String(input.status ?? '');
+    if (!['verified', 'rejected', 'expired'].includes(status)) {
+      throw new ValidationError('status must be verified, rejected, or expired.');
+    }
+    if (status === 'rejected' && !input.reason) throw new ValidationError('reason is required when evidence is rejected.');
+    return this.transactional(() => {
+      const before = cloneRecord(document);
+      document.metadata = {
+        ...document.metadata,
+        verification: {
+          ...document.metadata.verification,
+          status,
+          verifiedBy: actorId,
+          verifiedAt: new Date().toISOString(),
+          reason: input.reason ?? null
+        }
+      };
+      document.touch();
+      return this.recordUpdate('documents', before, document, actorId, `evidence.${status}`, {
+        reason: input.reason ?? null
+      });
+    });
+  }
+
+  getPersonProfile(personId, organizationId, { includePrivate = false } = {}) {
+    const person = this.assertTenantRecord(this.people, personId, organizationId, 'person');
+    const roleIds = new Set(Array.from(this.roleAssignments.values())
+      .filter((assignment) => assignment.personId === person.id && assignment.organizationId === organizationId && !assignment.endsAt)
+      .map((assignment) => assignment.roleId));
+    const profile = person.metadata?.profile ?? {};
+    return {
+      id: person.id,
+      organizationId,
+      givenName: person.givenName,
+      familyName: person.familyName,
+      preferredName: person.preferredName,
+      birthDate: includePrivate ? person.birthDate : null,
+      countryOfCitizenship: person.countryOfCitizenship,
+      preferredLocale: person.preferredLocale,
+      contacts: includePrivate ? person.contacts : person.contacts.map((contact) => ({
+        type: contact.type,
+        value: '[masked]',
+        isPrimary: contact.isPrimary,
+        verifiedAt: contact.verifiedAt
+      })),
+      address: profile.address ?? null,
+      countryCode: profile.countryCode ?? person.countryOfCitizenship ?? null,
+      timezone: profile.timezone ?? null,
+      accessibility: profile.accessibility ?? {},
+      notifications: profile.notifications ?? {},
+      bio: profile.bio ?? null,
+      emergencyContact: includePrivate ? (profile.emergencyContact ?? null) : null,
+      privacyConsent: Boolean(profile.privacyConsent),
+      avatar: profile.avatar ?? null,
+      roles: Array.from(roleIds).map((roleId) => {
+        const role = this.roles.get(roleId);
+        return { id: roleId, name: role?.name ?? role?.code ?? 'Assigned role' };
+      }),
+      professionalAssignments: Array.from(this.professionalAssignments.values())
+        .filter((assignment) => assignment.personId === person.id && assignment.organizationId === organizationId)
+        .map((assignment) => ({ id: assignment.id, roleTitle: assignment.roleTitle, campusId: assignment.campusId ?? null }))
+    };
+  }
+
+  updatePersonProfile(personId, organizationId, input, { selfService = false, actorId = null } = {}) {
+    const person = this.assertTenantRecord(this.people, personId, organizationId, 'person');
+    if (person.status === 'archived') throw new ValidationError('Archived person profiles cannot be changed.');
+    const selfFields = new Set([
+      'preferredName', 'preferredLocale', 'contacts', 'address', 'countryCode', 'timezone',
+      'accessibility', 'notifications', 'bio', 'emergencyContact', 'privacyConsent'
+    ]);
+    const adminFields = new Set([...selfFields, 'givenName', 'familyName', 'birthDate', 'countryOfCitizenship']);
+    const allowed = selfService ? selfFields : adminFields;
+    const forbidden = Object.keys(input).filter((key) => !allowed.has(key));
+    if (forbidden.length) throw new ValidationError(`Profile fields cannot be changed here: ${forbidden.join(', ')}.`);
+    if (input.preferredLocale && !['fr', 'en', 'es', 'pt', 'ar'].includes(input.preferredLocale)) {
+      throw new ValidationError('preferredLocale must be fr, en, es, pt, or ar.');
+    }
+    if (input.countryCode && !/^[A-Z]{2}$/.test(String(input.countryCode).toUpperCase())) {
+      throw new ValidationError('countryCode must be an ISO alpha-2 code.');
+    }
+    if (input.timezone) {
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: input.timezone });
+      } catch {
+        throw new ValidationError('timezone must be a valid IANA timezone.');
+      }
+    }
+    if (input.privacyConsent === false) {
+      input = { ...input, emergencyContact: null };
+    }
+    if (input.emergencyContact && input.privacyConsent !== true && person.metadata?.profile?.privacyConsent !== true) {
+      throw new ValidationError('privacyConsent is required before storing an emergency contact.');
+    }
+    const before = cloneRecord(person);
+    const profile = {
+      ...(person.metadata?.profile ?? {}),
+      ...Object.fromEntries(Object.entries(input).filter(([key]) =>
+        ['address', 'countryCode', 'timezone', 'accessibility', 'notifications', 'bio', 'emergencyContact', 'privacyConsent'].includes(key)
+      ))
+    };
+    if (typeof profile.bio === 'string' && profile.bio.length > 2000) throw new ValidationError('bio cannot exceed 2,000 characters.');
+    if (typeof profile.address === 'string' && profile.address.length > 500) throw new ValidationError('address cannot exceed 500 characters.');
+    if (typeof input.preferredName === 'string' && input.preferredName.length > 120) {
+      throw new ValidationError('preferredName cannot exceed 120 characters.');
+    }
+    if (selfService && Array.isArray(input.contacts)) {
+      input = {
+        ...input,
+        contacts: input.contacts.map(({ type, value, isPrimary }) => ({ type, value, isPrimary }))
+      };
+    }
+    if (input.countryCode) profile.countryCode = String(input.countryCode).toUpperCase();
+    if (Object.hasOwn(input, 'privacyConsent')) profile.consentUpdatedAt = new Date().toISOString();
+    const candidate = new Person({
+      ...person,
+      ...Object.fromEntries(Object.entries(input).filter(([key]) =>
+        ['givenName', 'familyName', 'birthDate', 'countryOfCitizenship', 'preferredName', 'preferredLocale', 'contacts'].includes(key)
+      )),
+      metadata: { ...person.metadata, profile }
+    });
+    for (const field of ['givenName', 'familyName', 'birthDate', 'countryOfCitizenship', 'preferredName', 'preferredLocale', 'contacts', 'metadata']) {
+      person[field] = candidate[field];
+    }
+    person.touch();
+    return this.transactional(() =>
+      this.recordUpdate('people', before, person, actorId, selfService ? 'profile.self-update' : 'profile.admin-update')
+    );
+  }
+
+  savePersonAvatar(personId, organizationId, input, actorId = null) {
+    const person = this.assertTenantRecord(this.people, personId, organizationId, 'person');
+    const asset = validateAsset(input, 'avatar');
+    const previousAssetId = person.metadata?.profile?.avatar?.assetId ?? null;
+    const assetId = createPermanentId();
+    const before = cloneRecord(person);
+    person.metadata = {
+      ...person.metadata,
+      profile: {
+        ...(person.metadata?.profile ?? {}),
+        avatar: {
+          assetId,
+          fileName: asset.fileName,
+          mimeType: asset.mimeType,
+          byteLength: asset.byteLength,
+          sha256: asset.sha256,
+          dimensions: asset.dimensions
+        }
+      }
+    };
+    person.touch();
+    return this.transactional(() => {
+      saveBlob(this, { assetId, organizationId, asset, actorId });
+      if (previousAssetId) deleteBlob(this, previousAssetId, organizationId);
+      this.recordUpdate('people', before, person, actorId, 'profile.avatar.replace');
+      return person.metadata.profile.avatar;
+    });
+  }
+
+  async getPersonAvatar(personId, organizationId) {
+    const person = this.assertTenantRecord(this.people, personId, organizationId, 'person');
+    const assetId = person.metadata?.profile?.avatar?.assetId;
+    if (!assetId) throw new ValidationError('No avatar is configured for this person.');
+    return readBlob(this, assetId, organizationId);
+  }
+
   registerDocumentVersion(previousDocumentId, input = {}, actorId = null) {
     return this.transactional(() => {
       const previous = cloneRecord(this.documents.get(previousDocumentId));
@@ -798,6 +1166,105 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       }
       const credential = super.issueCredential({ ...input, templateSnapshot, templateVersion }, actorId);
       return this.recordCreate('credentials', credential, actorId, 'credential.create');
+    });
+  }
+
+  issueLmsTitle(input, actorId = null) {
+    const enrollment = this.assertTenantRecord(this.lmsEnrollments, input.enrollmentId, input.organizationId, 'LMS enrollment');
+    if (enrollment.enrollmentStatus !== 'active') throw new ValidationError('LMS enrollment is not active.');
+    const progress = this.getLmsEnrollmentProgress(enrollment.id, input.organizationId);
+    if (!progress.eligibleForTitle) {
+      throw new ValidationError('All required lessons and final exams must be passed before title issuance.');
+    }
+    const titleType = String(input.titleType ?? '');
+    if (!['certificate', 'attestation', 'diploma'].includes(titleType)) {
+      throw new ValidationError('titleType must be certificate, attestation, or diploma.');
+    }
+    const participant = this.assertTenantRecord(this.lmsParticipants, enrollment.participantId, input.organizationId, 'LMS participant');
+    const person = this.assertTenantRecord(this.people, participant.personId, input.organizationId, 'person');
+    const program = this.assertTenantRecord(this.lmsPrograms, enrollment.programId, input.organizationId, 'LMS program');
+    const existing = Array.from(this.lmsCertificates.values()).find((item) =>
+      item.enrollmentId === enrollment.id && item.titleType === titleType && item.status !== 'archived'
+    );
+    if (existing) {
+      const credential = this.credentials.get(existing.credentialId);
+      return { credential, certificate: existing, idempotent: true, verificationToken: null };
+    }
+    if (!Array.isArray(input.signatureIds) || input.signatureIds.length === 0) {
+      throw new ValidationError('At least one active managed signature is required for title issuance.');
+    }
+    const signatures = input.signatureIds.map((signatureId) => {
+      const signature = this.assertTenantRecord(this.managedSignatures, signatureId, input.organizationId, 'signature');
+      if (!signature.active || signature.revokedAt) throw new ValidationError('Only active, non-revoked signatures can be used.');
+      return {
+        name: signature.holderName,
+        function: signature.function,
+        signatureType: 'visual',
+        evidenceReference: `managed-signature:${signature.id}:${signature.sha256}`
+      };
+    });
+    const hasAuthority = Array.from(this.accreditations.values()).some((record) =>
+      record.organizationId === input.organizationId && record.status === 'active'
+    ) || Array.from(this.operatingAuthorizations.values()).some((record) =>
+      record.organizationId === input.organizationId && record.status === 'active'
+    );
+    const awardedAt = new Date().toISOString();
+    const generatedSnapshot = {
+      titleType,
+      holder: { id: person.id, name: `${person.givenName} ${person.familyName}`.trim() },
+      program: { id: program.id, title: program.title },
+      awardedAt,
+      issuerOrganizationId: input.organizationId,
+      signatures,
+      assurance: hasAuthority ? 'configured-authority-record-present' : 'platform-issued-not-accreditation-verified'
+    };
+    const fileContent = JSON.stringify(generatedSnapshot);
+    return this.transactional(() => {
+      const document = FoundationService.prototype.registerDocument.call(this, {
+        organizationId: input.organizationId,
+        personId: person.id,
+        type: titleType,
+        title: input.title ?? `${titleType}: ${program.title}`,
+        storageReference: `generated://lms/${enrollment.id}/${titleType}`,
+        fileContent,
+        accessLevel: 'holder',
+        issuedAt: awardedAt,
+        metadata: {
+          source: 'lms-title',
+          enrollmentId: enrollment.id,
+          lmsProgramId: program.id,
+          platformIssued: true,
+          authorityVerification: generatedSnapshot.assurance,
+          generatedSnapshot
+        }
+      }, actorId);
+      this.recordCreate('documents', document, actorId, 'lms-title.document.create');
+      const credential = FoundationService.prototype.issueCredential.call(this, {
+        organizationId: input.organizationId,
+        personId: person.id,
+        documentId: document.id,
+        programId: program.academicProgramId,
+        credentialType: titleType,
+        qualification: input.qualification ?? `${titleType} (platform-issued)`,
+        signatories: signatures,
+        awardedAt,
+        status: 'issued'
+      }, actorId);
+      this.recordCreate('credentials', credential, actorId, 'lms-title.credential.issue');
+      const certificate = EducationPlatformService.prototype.createPlatformRecord.call(this, 'lmsCertificates', {
+        organizationId: input.organizationId,
+        enrollmentId: enrollment.id,
+        credentialId: credential.id,
+        titleType,
+        issuedAt: awardedAt
+      }, actorId);
+      this.recordCreate('lmsCertificates', certificate, actorId, 'lms-title.link.create');
+      return {
+        credential,
+        certificate,
+        idempotent: false,
+        verificationToken: credential.verificationToken
+      };
     });
   }
 
@@ -1372,10 +1839,21 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       const person = this.people.get(account.personId);
       const organization = FoundationService.prototype.createOrganization.call(
         this,
-        organizationInput,
+        { ...organizationInput, countryCode: organizationInput.countryCode.toUpperCase() },
         account.id
       );
       this.recordCreate('organizations', organization, account.id, 'organization.onboard');
+
+      const localization = new LocalizationProfile({
+        organizationId: organization.id,
+        userId: account.id,
+        countryCode: organization.countryCode,
+        city: organizationInput.headquartersAddress?.city ?? 'Not configured',
+        language: organizationInput.locale ?? 'fr',
+        currency: organizationInput.currency ?? 'USD',
+        timezone: organizationInput.timezone ?? 'UTC'
+      });
+      this.recordCreate('localizationProfiles', localization, account.id, 'localization.onboard');
 
       const personBefore = cloneRecord(person);
       person.primaryOrganizationId = organization.id;
@@ -1386,6 +1864,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       const accountBefore = cloneRecord(account);
       account.organizationIds = [organization.id];
       account.organizationId = organization.id;
+      account.metadata = { ...account.metadata, locale: organizationInput.locale ?? 'fr' };
       account.touch();
       this.recordUpdate('accounts', accountBefore, account, account.id, 'account.onboard');
       this.connection.run(
@@ -1519,6 +1998,17 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       throw new ValidationError('Account is not allowed to access this organization.');
     }
 
+    if (account.metadata?.forcePasswordChange === true) {
+      return {
+        passwordChangeRequired: true,
+        challengeToken: signJwt({
+          sub: account.id,
+          organizationId: resolvedOrganizationId,
+          purpose: 'password-change'
+        }, { expiresInSeconds: 600 })
+      };
+    }
+
     await this.writeAuditEntry({
       actorId: account.id,
       organizationId: resolvedOrganizationId,
@@ -1544,6 +2034,51 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     }
 
     return this.createAuthenticationSession(account, resolvedOrganizationId);
+  }
+
+  async completeRequiredPasswordChange(challengeToken, password) {
+    if (typeof password !== 'string' || password.length < 10) {
+      throw new ValidationError('password must contain at least 10 characters.');
+    }
+    const payload = verifyJwt(challengeToken);
+    if (!payload || payload.purpose !== 'password-change') {
+      throw new ValidationError('Password change challenge is invalid or expired.');
+    }
+    const account = this.accounts.get(payload.sub);
+    if (!account?.metadata?.forcePasswordChange) {
+      throw new ValidationError('Password change is not required for this account.');
+    }
+    const updatePassword = async () => {
+      const before = cloneRecord(account);
+      await this.setLocalPassword(account.id, password);
+      account.metadata = { ...account.metadata, forcePasswordChange: false, passwordChangedAt: new Date().toISOString() };
+      account.touch();
+      await this.recordUpdate('accounts', before, account, account.id, 'account.password-change-required-complete');
+      await this.writeAuditEntry({
+        actorId: account.id,
+        organizationId: payload.organizationId ?? null,
+        entityType: 'UserAccount',
+        entityId: account.id,
+        action: 'auth.password.changed',
+        after: { forcePasswordChange: false }
+      });
+    };
+    if (this.connection.isAsync) await this.transactional(updatePassword);
+    else await updatePassword();
+    return this.createAuthenticationSession(account, payload.organizationId ?? null);
+  }
+
+  executeBulkImport(input, actorId) {
+    if (input.dryRun !== false) return executeBulkImport(this, input, actorId);
+    this.bulkImportLocks ??= new Map();
+    const lockKey = `${input.organizationId}:${input.idempotencyKey}`;
+    const previous = this.bulkImportLocks.get(lockKey) ?? Promise.resolve();
+    const operation = previous.then(() => executeBulkImport(this, input, actorId));
+    const trackedOperation = operation.catch(() => {});
+    this.bulkImportLocks.set(lockKey, trackedOperation);
+    return operation.finally(() => {
+      if (this.bulkImportLocks.get(lockKey) === trackedOperation) this.bulkImportLocks.delete(lockKey);
+    });
   }
 
   async refreshAuthentication(refreshToken) {
@@ -1627,8 +2162,32 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       organizationId,
       organizationIds: account.organizationIds,
       permissions: this.getAccountPermissions(account.id, organizationId),
-      profile: person ? { givenName: person.givenName, familyName: person.familyName } : null
+      profile: person ? { givenName: person.givenName, familyName: person.familyName } : null,
+      locale: account.metadata?.locale ?? person?.preferredLocale ?? null,
+      organization: organizationId ? (() => {
+        const organization = this.organizations.get(organizationId);
+        return organization ? {
+          id: organization.id,
+          displayName: organization.displayName,
+          countryCode: organization.countryCode,
+          organizationType: organization.organizationType
+        } : null;
+      })() : null
     };
+  }
+
+  updateUserLocale(accountId, locale) {
+    if (!['fr', 'en', 'es', 'pt', 'ar'].includes(locale)) {
+      throw new ValidationError(`Unsupported language: ${locale}`);
+    }
+    const account = this.accounts.get(accountId);
+    if (!account) throw new ValidationError(`Unknown account: ${accountId}`);
+    return this.transactional(() => {
+      const before = cloneRecord(account);
+      account.metadata = { ...account.metadata, locale };
+      account.touch();
+      return this.recordUpdate('accounts', before, account, accountId, 'account.locale-update');
+    });
   }
 
   transitionInstitutionalStatus(resource, id, input, actorId = null) {
@@ -2280,8 +2839,16 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     const permissions = this.getAccountPermissions(accountId, organizationId);
     const roles = this.getRoleCodes(accountId, organizationId);
     const role = roles[0] ?? 'learner';
+    const organizationType = this.organizations.get(organizationId)?.organizationType ?? 'institution';
+    const experienceRole = role === 'tenant-admin'
+      ? ({ university: 'university-admin', 'training-center': 'training-center-admin', school: 'school-admin' }[organizationType] ?? 'school-admin')
+      : role;
     const cardsByRole = {
       admin: ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'financeCollected', 'dataQualityScore'],
+      'platform-admin': ['headcount', 'enrollments', 'financeCollected', 'dataQualityScore', 'lmsActivityCount'],
+      'school-admin': ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'financeCollected', 'dataQualityScore'],
+      'university-admin': ['headcount', 'enrollments', 'resultAverage', 'progressionAverage', 'financeCollected', 'dataQualityScore'],
+      'training-center-admin': ['headcount', 'enrollments', 'progressionAverage', 'lmsActivityCount', 'financeCollected'],
       'tenant-admin': ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'financeCollected', 'dataQualityScore'],
       direction: ['headcount', 'enrollments', 'attendanceRate', 'resultAverage', 'dataQualityScore'],
       teacher: ['attendanceRate', 'resultAverage', 'progressionAverage'],
@@ -2289,6 +2856,7 @@ export class PersistentEducationPlatformService extends EducationPlatformService
       learner: ['resultAverage', 'attendanceRate', 'progressionAverage'],
       apprenant: ['resultAverage', 'attendanceRate', 'progressionAverage'],
       parent: ['resultAverage', 'attendanceRate', 'progressionAverage'],
+      guardian: ['resultAverage', 'attendanceRate', 'progressionAverage'],
       student: ['resultAverage', 'progressionAverage', 'lmsActivityCount'],
       'university-student': ['resultAverage', 'progressionAverage', 'lmsActivityCount'],
       'etudiant-universitaire': ['resultAverage', 'progressionAverage', 'lmsActivityCount'],
@@ -2300,20 +2868,85 @@ export class PersistentEducationPlatformService extends EducationPlatformService
     const analytics = permissions.includes('*') || permissions.includes('analytics.read')
       ? this.buildAnalytics({ organizationId })
       : { metrics: {} };
+    const modulePermissions = [
+      ['configuration', ['organizations.read', 'institution.read', 'academics.read', 'people.read', 'profiles.read']],
+      ['enrollment', ['academics.read']],
+      ['teaching', ['assignments.read', 'scheduling.read']],
+      ['attendance', ['attendance.read']],
+      ['grading', ['grading.read']],
+      ['lms', ['lms.read']],
+      ['finance', ['finance.read']],
+      ['documents', ['documents.read']],
+      ['analytics', ['analytics.read']],
+      ['support', ['support.read']],
+      ['governance', ['audit.read', 'operations.read', 'security.read']]
+    ];
+    const nextStepDefinitions = {
+      'platform-admin': [
+        ['operations.read', 'Review platform operations', '/operations'],
+        ['audit.read', 'Review governance events', '/audit']
+      ],
+      'school-admin': [
+        ['academics.write', 'Configure the academic year and classes', '/academics'],
+        ['academics.write', 'Import and enroll learners', '/imports'],
+        ['organizations.write', 'Configure logo and signatories', '/identity-assets']
+      ],
+      'university-admin': [
+        ['academics.write', 'Configure programs, periods and courses', '/academics'],
+        ['academics.write', 'Import students', '/imports'],
+        ['institution.write', 'Maintain campuses and accreditations', '/institution']
+      ],
+      'training-center-admin': [
+        ['lms.write', 'Configure learning programs', '/lms'],
+        ['academics.write', 'Import trainees and trainers', '/imports'],
+        ['credentials.write', 'Configure signatories and issue titles', '/identity-assets']
+      ],
+      learner: [
+        ['assignments.read', 'Review assignments', '/assignments'],
+        ['lms.read', 'Continue learning', '/learning-path'],
+        ['documents.read', 'Open documents', '/documents'],
+        ['people.read', 'Review profile preferences', '/profile']
+      ],
+      student: [
+        ['lms.read', 'Continue a course', '/learning-path'],
+        ['grading.read', 'Review results', '/grading'],
+        ['calendar.read', 'View the calendar', '/calendar']
+      ],
+      teacher: [
+        ['attendance.write', 'Record attendance', '/attendance'],
+        ['grading.write', 'Enter grades', '/grading'],
+        ['assignments.write', 'Prepare an assignment', '/assignments']
+      ],
+      trainer: [
+        ['lms.write', 'Update course content', '/lms'],
+        ['credentials.write', 'Review title eligibility', '/learning-path'],
+        ['grading.write', 'Assess trainees', '/grading'],
+        ['attendance.write', 'Record attendance', '/attendance']
+      ],
+      parent: [
+        ['attendance.read', 'Review attendance', '/attendance'],
+        ['grading.read', 'Review results', '/grading'],
+        ['communications.read', 'Contact the institution', '/communications']
+      ],
+      guardian: [
+        ['attendance.read', 'Review attendance', '/attendance'],
+        ['communications.read', 'Contact the institution', '/communications']
+      ]
+    };
+    const allowed = (permission) => permissions.includes('*') || permissions.includes(permission);
     return {
       role,
+      experienceRole,
       roles,
-      cards: (cardsByRole[role] ?? cardsByRole.learner)
+      cards: (cardsByRole[experienceRole] ?? cardsByRole[role] ?? cardsByRole.learner)
         .filter((metric) => Object.hasOwn(analytics.metrics, metric))
         .map((metric) => ({ metric, value: analytics.metrics[metric] })),
-      availableModules: [
-        ['analytics', 'analytics.read'],
-        ['support', 'support.read'],
-        ['saas', 'saas.read'],
-        ['operations', 'operations.read'],
-        ['ai-assistance', 'ai-assistance.read']
-      ].filter(([, permission]) => permissions.includes('*') || permissions.includes(permission))
-        .map(([module]) => module)
+      availableModules: modulePermissions
+        .filter(([, required]) => required.some(allowed))
+        .map(([module]) => module),
+      nextSteps: (nextStepDefinitions[experienceRole] ?? nextStepDefinitions[role] ?? nextStepDefinitions.learner)
+        .filter(([permission]) => allowed(permission))
+        .map(([, label, path]) => ({ label, path }))
     };
   }
 
