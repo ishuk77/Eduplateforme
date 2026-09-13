@@ -12,6 +12,7 @@ import {
 } from '../domain/institutional/institutional.js';
 import { ReferenceEntry } from '../domain/learning-systems/learning-systems.js';
 import { createPermanentId, ValidationError } from '../shared/entity.js';
+import { executeContractImport, IMPORT_CONTRACTS } from './import-template-library.js';
 
 export const IMPORT_LIMITS = Object.freeze({
   maxFileBytes: 5 * 1024 * 1024,
@@ -583,6 +584,15 @@ function applyRows(service, { organizationId, kind, validatedRows, actorId, batc
 }
 
 export async function executeBulkImport(service, input, actorId) {
+  if (IMPORT_CONTRACTS[input.kind]) {
+    try {
+      return await executeContractImport(service, input, actorId);
+    } catch (error) {
+      const legacyKinds = new Set(['people', 'learners', 'references']);
+      const contractMismatch = /headers must exactly match|expected "Données" worksheet/.test(error.message);
+      if (!legacyKinds.has(input.kind) || !contractMismatch) throw error;
+    }
+  }
   const organizationId = input.organizationId;
   service.assertOrganizationContext(organizationId);
   const parsed = await parseImportFile(input);
