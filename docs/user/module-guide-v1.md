@@ -29,19 +29,51 @@ Les modules inscriptions, emplois du temps, devoirs, présences, notes, LMS, fin
 
 ## Import CSV/XLSX
 
-Les imports nécessitent `academics.write`, une connexion en ligne et une confirmation après dry-run. Limites: 5 Mio, 1 000 lignes de données et 20 colonnes. Les formules sont refusées, le fichier n’est jamais écrit sur disque et chaque ligne reçoit des erreurs explicites.
+La page **Imports CSV/XLSX** fournit une bibliothèque de modèles individuels CSV et XLSX ainsi qu’un pack global XLSX. Les modèles complets utilisent exclusivement des identifiants lisibles et stables : `external_id` pour les personnes, matricules pour les apprenants et `code` pour les sites et le catalogue académique. Aucun UUID Eduplateforme n’est demandé.
 
-Schémas fixes:
+### Ordre recommandé
 
-- `people`: `personType,givenName,familyName,email,phone,learnerNumber,gradeLevel,classCode,guardianGivenName,guardianFamilyName,guardianEmail,relationship,professionalType,roleTitle,startsOn,campusCode,createAccount,accountPolicy`
-- `learners`: `givenName,familyName,email,learnerNumber,classCode,createAccount`
-- `class-roster`: `givenName,familyName,email,learnerNumber,createAccount` avec `classId` choisi dans l’interface
-- `staff`: `givenName,familyName,email,professionalType,roleTitle,startsOn,campusCode,createAccount`
-- `references`: `catalog,code,labelFr,labelEn,labelEs,labelPt,labelAr,countryCode`
+1. `references`, `campuses`, `academic-years`, `academic-levels` et `subjects`;
+2. `people`;
+3. `learners`, `guardians` et `professionals`;
+4. `academic-periods` et `programs`;
+5. `classes`;
+6. `guardian-links` et `professional-assignments`;
+7. `courses`;
+8. `enrollments`.
 
-Pour `people`, `personType` accepte apprenant/étudiant/stagiaire, parent/responsable ou enseignant/formateur/staff. Les colonnes apprenant créent Person, profil apprenant, inscription et classe; les colonnes responsable créent profil et relation; les colonnes professionnelles créent profil et affectation. L’application réutilise une personne du tenant par courriel, un apprenant par numéro, puis évite une seconde inscription dans la même classe. Une clé d’idempotence empêche la répétition d’un lot. L’application finale est transactionnelle sous SQLite et PostgreSQL.
+Chaque carte précise son objectif, ses dépendances et ses colonnes. Le classeur individuel contient **Instructions**, **Données**, **Dictionnaire** et, lorsqu’il existe des choix fermés, **Références**. La ligne d’en-tête est figée, filtrable et ne doit être ni renommée ni réordonnée.
 
-Si `createAccount` vaut `true`, un apprenant peut utiliser son matricule sans courriel. Préscolaire/maternelle et niveaux 1 à 4 appliquent par défaut `parent`; à partir du niveau 5, ou lorsque le niveau est inconnu, le fichier choisit explicitement `parent`, `learner` ou `both`. Un téléphone est un contact, jamais un identifiant de connexion sans OTP vérifié. Le résultat immédiat contient une seule fois les identifiants temporaires; seul le hash du mot de passe est stocké et la connexion impose un changement avant tout accès. Aucun courriel n’est envoyé sans fournisseur configuré.
+### Contrats complets
+
+| Modèle | Colonnes exactes |
+|---|---|
+| `references` | `catalog,code,label_fr,label_en,label_es,label_pt,label_ar,country_code` |
+| `campuses` | `code,name,campus_type,timezone,local_identifier` |
+| `people` | `external_id,given_name,family_name,email,phone,birth_date,preferred_locale,country_of_citizenship` |
+| `learners` | `person_external_id,learner_number,national_learner_id` |
+| `guardians` | `person_external_id,relationship_types,preferred_contact_channels` |
+| `guardian-links` | `guardian_person_external_id,learner_person_external_id,relationship,permissions` |
+| `professionals` | `person_external_id,professional_type,specialties,qualifications` |
+| `professional-assignments` | `professional_person_external_id,campus_code,role_title,employment_type,starts_on,ends_on` |
+| `academic-years` | `code,name,starts_on,ends_on,calendar_system` |
+| `academic-periods` | `code,name,academic_year_code,period_type,sequence,starts_on,ends_on` |
+| `academic-levels` | `code,name,specialization,credits_required` |
+| `programs` | `code,name,academic_year_code,cycle,national_program_code` |
+| `classes` | `code,name,academic_year_code,program_code,level_code,campus_code` |
+| `subjects` | `code,name,description,default_credits` |
+| `courses` | `code,name,subject_code,academic_period_code,class_code,program_code,credits` |
+| `enrollments` | `learner_person_external_id,class_code,enrollment_reference,status` |
+
+Les champs multivalués utilisent `|` comme séparateur interne. Les dates utilisent `AAAA-MM-JJ`. Les codes et `external_id` doivent rester identiques entre fichiers. Les exemples fournis sont fictifs, internationaux et ne doivent pas être remplacés par des données réelles avant que le fichier ne soit stocké conformément aux règles de l’établissement.
+
+### Validation et application
+
+Les CSV sont en UTF-8 avec BOM et séparateur virgule. Un XLSX importé doit conserver la feuille **Données**. Le serveur contrôle l’extension et la signature, les en-têtes exacts, les champs obligatoires, formats, listes, doublons, références externes et appartenance au tenant. Toute formule CSV ou XLSX est refusée, y compris sur une autre feuille du classeur.
+
+Limites : 5 Mio, 1 000 lignes, 20 colonnes, 8 feuilles et 20 000 cellules. Le fichier n’est pas écrit sur disque. Le dry-run ne modifie aucune donnée et retourne les erreurs avec ligne et champ. L’application confirmée est tout-ou-rien, idempotente et transactionnelle sous SQLite/PostgreSQL; son rapport distingue `created`, `updated`, `ignored` et `invalid`.
+
+Les anciens modèles unifiés restent accessibles sans paramètre `format` sur leurs URL historiques; `class-roster` et `staff` restent acceptés pour compatibilité. Ils peuvent créer des comptes temporaires selon leur contrat historique; les nouveaux modèles complets ne créent jamais implicitement de compte de connexion.
 
 ### Activation par paiement
 

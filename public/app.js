@@ -1705,43 +1705,82 @@ function downloadText(filename, text, contentType = 'text/csv;charset=utf-8') {
   URL.revokeObjectURL(url);
 }
 
-async function downloadImportTemplate(kind) {
-  const response = await fetch(`/imports/templates/${encodeURIComponent(kind)}`, {
-    headers: { authorization: `Bearer ${state.token}` }
+async function downloadImportTemplate(kind, format = 'csv') {
+  const response = await fetch(`/imports/templates/${encodeURIComponent(kind)}?format=${encodeURIComponent(format)}`, {
+    headers: { authorization: ['Bearer', state.token].join(' ') }
   });
   if (!response.ok) throw new Error('Impossible de télécharger le modèle.');
-  downloadText(`${kind}-import-template.csv`, await response.text());
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${kind}-import-template.${format}`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadImportPack() {
+  const response = await fetch('/imports/templates-pack.xlsx', {
+    headers: { authorization: ['Bearer', state.token].join(' ') }
+  });
+  if (!response.ok) throw new Error('Impossible de télécharger le pack XLSX.');
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'eduplateforme-import-templates.xlsx';
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function renderImportResult(result) {
+  const valid = result.summary.valid ?? result.summary.total - result.summary.invalid;
+  const changes = ['created', 'updated', 'ignored']
+    .filter((key) => Number.isInteger(result.summary[key]))
+    .map((key) => `${key}: ${result.summary[key]}`)
+    .join(' · ');
   return `
-    <div class="resource-summary" role="status">${result.dryRun ? 'Aperçu sans écriture' : 'Import appliqué'} · ${result.summary.valid}/${result.summary.total} ligne(s) valide(s) · ${result.summary.invalid} erreur(s)</div>
-    ${result.errors.length ? `<ul class="error-list">${result.errors.map((error) => `<li><strong>Ligne ${error.rowNumber}</strong> — ${escapeHtml(error.message)}</li>`).join('')}</ul>` : ''}
-    <div class="table-scroll"><table><thead><tr><th>Ligne</th><th>État</th><th>Données</th></tr></thead><tbody>${result.rows.map((row) => `<tr><td>${row.rowNumber}</td><td>${row.errors?.length ? 'À corriger' : 'Valide'}</td><td><code>${escapeHtml(JSON.stringify(row.values ?? row.created ?? row))}</code></td></tr>`).join('')}</tbody></table></div>`;
+    <div class="resource-summary" role="status">${result.dryRun ? 'Aperçu sans écriture' : 'Import appliqué'} · ${valid}/${result.summary.total} ligne(s) valide(s) · ${result.summary.invalid} erreur(s)${changes ? ` · ${escapeHtml(changes)}` : ''}</div>
+    ${result.errors.length ? `<ul class="error-list">${result.errors.map((error) => `<li><strong>Ligne ${error.rowNumber}${error.field ? ` · ${escapeHtml(error.field)}` : ''}</strong> — ${escapeHtml(error.message)}</li>`).join('')}</ul>` : ''}
+    <div class="table-scroll"><table><thead><tr><th>Ligne</th><th>État</th><th>Données</th></tr></thead><tbody>${result.rows.map((row) => `<tr><td>${row.rowNumber}</td><td>${row.errors?.length ? 'À corriger' : escapeHtml(row.outcome ?? 'Valide')}</td><td><code>${escapeHtml(JSON.stringify(row.values ?? row.created ?? row))}</code></td></tr>`).join('')}</tbody></table></div>`;
 }
 
 async function importsPage() {
   app.innerHTML = shell('<main class="content-stack" id="main-content"><section class="page-heading"><p class="section-label">Opérations quotidiennes</p><h1>Imports CSV/XLSX</h1><p>Chargement des classes autorisées…</p></section></main>', 'imports');
   bindShell();
   const selected = new URLSearchParams(window.location.search);
-  const initialKind = ['people', 'learners', 'staff', 'class-roster', 'references'].includes(selected.get('kind')) ? selected.get('kind') : 'people';
+  let catalog = [];
   let classes = { items: [] };
   try {
-    classes = await apiRequest('/academics/classes?limit=200');
+    const [schemaPayload, classesPayload] = await Promise.all([
+      apiRequest('/imports/schema'),
+      apiRequest('/academics/classes?limit=200')
+    ]);
+    catalog = schemaPayload.contracts;
+    classes = classesPayload;
   } catch (error) {
     notification(error.message, 'error');
   }
+  const initialKind = catalog.some((item) => item.kind === selected.get('kind')) ? selected.get('kind') : (catalog[0]?.kind || 'people');
+  const catalogRows = catalog.map((item, index) => `<tr>
+    <td><strong>${index + 1}. ${escapeHtml(item.title)}</strong><br><code>${escapeHtml(item.kind)}</code></td>
+    <td>${escapeHtml(item.objective)}</td>
+    <td>${escapeHtml(item.dependencies.join(' → ') || 'Aucune')}</td>
+    <td class="row-actions"><button type="button" class="secondary-button" data-template-kind="${escapeHtml(item.kind)}" data-template-format="csv">CSV</button><button type="button" class="secondary-button" data-template-kind="${escapeHtml(item.kind)}" data-template-format="xlsx">XLSX</button></td>
+  </tr>`).join('');
   app.innerHTML = shell(`
     <main class="content-stack" id="main-content">
-      <section class="page-heading"><p class="section-label">Opérations quotidiennes</p><h1>Imports CSV/XLSX</h1><p>Les imports officiels nécessitent une connexion, un aperçu sans écriture et une confirmation explicite.</p><a class="help-link" href="/help#bulk-import">Lire le guide et les schémas</a></section>
+      <section class="page-heading"><p class="section-label">Opérations quotidiennes</p><h1>Bibliothèque d’import CSV/XLSX</h1><p>Utilisez les identifiants externes et codes stables, jamais les UUID internes. Importez dans l’ordre des dépendances, prévisualisez, puis confirmez.</p><div class="form-actions"><button class="primary-button" id="template-pack-download" type="button">Télécharger le pack XLSX</button><a class="help-link" href="/help#bulk-import">Lire le guide complet</a></div></section>
+      <section class="surface-card resource-section">
+        <div class="section-header"><div><p class="section-label">${catalog.length} modèles</p><h2>Catalogue des modèles</h2></div></div>
+        <div class="table-scroll"><table><thead><tr><th>Modèle</th><th>Objectif</th><th>Dépendances</th><th>Téléchargements</th></tr></thead><tbody>${catalogRows}</tbody></table></div>
+      </section>
       <section class="surface-card resource-section">
         <h2>1. Préparer et prévisualiser</h2>
         <form id="import-form" class="form-grid">
-          <label>Type d’import<select name="kind"><option value="people" ${initialKind === 'people' ? 'selected' : ''}>Personnes unifiées (recommandé)</option><option value="learners" ${initialKind === 'learners' ? 'selected' : ''}>Apprenants (ancien modèle)</option><option value="class-roster" ${initialKind === 'class-roster' ? 'selected' : ''}>Liste d’une classe</option><option value="staff" ${initialKind === 'staff' ? 'selected' : ''}>Équipe (ancien modèle)</option><option value="references" ${initialKind === 'references' ? 'selected' : ''}>Catalogues et codes</option></select></label>
+          <label>Type d’import<select name="kind">${catalog.map((item) => `<option value="${escapeHtml(item.kind)}" ${initialKind === item.kind ? 'selected' : ''}>${escapeHtml(item.title)}</option>`).join('')}</select></label>
           <label id="import-class-field">Classe cible<select name="classId"><option value="">Selon classCode du fichier</option>${classes.items.map((item) => `<option value="${escapeHtml(item.id)}" ${selected.get('classId') === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.code || item.id)}</option>`).join('')}</select><small class="field-status">${classes.items.length ? `${classes.items.length} classe(s) autorisée(s).` : 'Aucune classe disponible. Créez année, programme et classe avant un import d’apprenants.'}</small></label>
           <label class="form-wide">Fichier CSV ou XLSX (5 Mio, 1 000 lignes maximum)<input name="file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
-          <p class="resource-summary form-wide">Le modèle Personnes adapte les champs selon <code>personType</code>. Pour un apprenant, renseignez matricule, niveau, classe et politique de compte; pour un responsable, relation et contact; pour un professionnel, métier, fonction et date de début. Le modèle Référentiels utilise catalogue + code stable + libellés FR/EN/ES/PT/AR.</p>
-          <div class="form-actions form-wide"><button class="secondary-button" id="template-download" type="button">Télécharger le modèle CSV</button><button class="primary-button" type="submit">Prévisualiser sans écrire</button></div>
+          <p class="resource-summary form-wide">CSV : UTF-8 avec BOM et séparateur virgule. XLSX : saisissez uniquement dans <strong>Données</strong>. Ne modifiez ni le nom ni l’ordre des colonnes; les formules sont interdites. Le flux historique « Personnes unifiées (recommandé) » reste accepté pour les fichiers existants.</p>
+          <div class="form-actions form-wide"><button class="secondary-button" id="template-download" type="button">Modèle CSV</button><button class="secondary-button" id="template-xlsx-download" type="button">Modèle XLSX</button><button class="primary-button" type="submit">Prévisualiser sans écrire</button></div>
         </form>
       </section>
       <section class="surface-card resource-section" id="import-result" aria-live="polite"><h2>2. Résultat de validation</h2><p>Aucun fichier prévisualisé.</p></section>
@@ -1753,17 +1792,26 @@ async function importsPage() {
   let pendingPayload = null;
   const updateClassVisibility = () => {
     const kind = new FormData(form).get('kind');
-    document.querySelector('#import-class-field').hidden = ['staff', 'references'].includes(kind);
+    document.querySelector('#import-class-field').hidden = kind !== 'class-roster';
   };
   form.elements.kind.addEventListener('change', updateClassVisibility);
   updateClassVisibility();
   document.querySelector('#template-download').addEventListener('click', async () => {
     try {
-      await downloadImportTemplate(new FormData(form).get('kind'));
+      await downloadImportTemplate(new FormData(form).get('kind'), 'csv');
     } catch (error) {
       notification(error.message, 'error');
     }
   });
+  document.querySelector('#template-xlsx-download').addEventListener('click', () =>
+    downloadImportTemplate(new FormData(form).get('kind'), 'xlsx').catch((error) => notification(error.message, 'error'))
+  );
+  document.querySelector('#template-pack-download').addEventListener('click', () =>
+    downloadImportPack().catch((error) => notification(error.message, 'error'))
+  );
+  document.querySelectorAll('[data-template-kind]').forEach((button) => button.addEventListener('click', () =>
+    downloadImportTemplate(button.dataset.templateKind, button.dataset.templateFormat).catch((error) => notification(error.message, 'error'))
+  ));
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!navigator.onLine) {
